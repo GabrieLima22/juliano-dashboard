@@ -140,11 +140,11 @@ $lastSync = isset($data['created_at']) ? date('d/m/Y H:i', (int)$data['created_a
   <div class="theme-toggle" id="themeToggle" data-active="dark">
     <label class="theme-toggle__option">
       <input type="radio" name="theme" value="dark" checked>
-      <span class="theme-toggle__label"><span class="theme-toggle__icon">🌙</span> Dark</span>
+      <span class="theme-toggle__label"><span class="theme-toggle__icon"></span> Dark</span>
     </label>
     <label class="theme-toggle__option">
       <input type="radio" name="theme" value="light">
-      <span class="theme-toggle__label"><span class="theme-toggle__icon">☀️</span> Light</span>
+      <span class="theme-toggle__label"><span class="theme-toggle__icon"></span> Light</span>
     </label>
     <span class="theme-toggle__indicator" aria-hidden="true"></span>
   </div>
