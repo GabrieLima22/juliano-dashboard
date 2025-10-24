@@ -56,40 +56,34 @@ $lastSync = isset($data['created_at']) ? date('d/m/Y H:i', (int)$data['created_a
 <body class="theme-dark bgfx" data-reference-month="<?php echo htmlspecialchars($referenceYm, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <div class="page">
-        <!-- Banner topo (troca automÃ¡tico pelo tema) -->
-   <figure class="banner" role="img"
+<!-- Banner topo (troca automático pelo tema) -->
+<figure class="banner banner--contain banner--short" role="img"
         aria-label="Banner CEO JML: Juliano — Pessoas, Serviços, Tecnologias">
-      <div class="banner__tools">
-        <button class="chip banner__config" type="button" data-open="config" aria-label="Abrir configurações">
-          Configurações
-        </button>
-      </div>
-    </figure>
+  <div class="banner__tools">
+    <button class="chip chip--glass banner__config" type="button" data-open="config" aria-label="Abrir configurações">
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10.325 4.317a1.5 1.5 0 0 1 3.35 0l.194 1.264a7.94 7.94 0 0 1 1.629.945l1.215-.405a1.5 1.5 0 1 1 .9 2.865l-1.052.35c.13.534.196 1.09.196 1.664s-.066 1.13-.196 1.664l1.052.35a1.5 1.5 0 1 1-.9 2.865l-1.215-.405a7.94 7.94 0 0 1-1.629.945l-.194 1.264a1.5 1.5 0 0 1-3.35 0l-.194-1.264a7.94 7.94 0 0 1-1.629-.945l-1.215.405a1.5 1.5 0 1 1-.9-2.865l1.052-.35A6.9 6.9 0 0 1 8.5 12c0-.574.066-1.13.196-1.664l-1.052-.35a1.5 1.5 0 1 1 .9-2.865l1.215.405c.5-.365 1.05-.69 1.629-.945l.194-1.264ZM12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6Z"/></svg>
+      <span>Configurações</span>
+    </button>
+  </div>
+</figure>
+<section class="kpis">
+  <article class="card kpi kpi--click" role="button" tabindex="0" data-kpi="month" aria-label="Abrir detalhes do recebido no mês">
+    <header><span class="micro">Recebido em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span></header>
+    <div class="kpi__value" data-bind="kpi-month">R$ 0,00</div>
+  </article>
 
-    <section class="kpis">
-      <article class="card kpi" data-kpi="month" role="button" tabindex="0" aria-label="Abrir detalhes do mês">
-        <header>
-          <span class="micro">Recebido em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-        </header>
-        <div class="kpi__value" data-bind="kpi-month">R$ 0,00</div>
-      </article>
-      <article class="card kpi" data-kpi="prolabore" role="button" tabindex="0" aria-label="Abrir detalhes do pró-labore">
-        <header>
-          <span class="micro">Pró-labore</span>
-        </header>
-        <div class="kpi__stack">
-          <div class="kpi__line"><span class="muted">Cobre até</span><strong data-bind="pl-covers"></strong></div>
-          <div class="kpi__line"><span class="badge" data-bind="pl-badge">Em dia</span></div>
-          <div class="kpi__line" data-bind="pl-extra">—</div>
-        </div>
-      </article>
-      <article class="card kpi" data-kpi="others" role="button" tabindex="0" aria-label="Abrir detalhes de outras origens">
-        <header>
-          <span class="micro">Outras origens em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-        </header>
-        <div class="kpi__value" data-bind="kpi-others">R$ 0,00</div>
-      </article>
-    </section>
+  <article class="card kpi kpi--click" role="button" tabindex="0" data-kpi="prolabore" aria-label="Abrir detalhes do pró-labore">
+    <header><span class="micro">Pró-labore</span></header>
+    <div class="kpi__value" data-bind="kpi-pl">R$ 0,00</div>
+    <div class="kpi__status"><span class="badge" data-bind="pl-badge">Em dia</span></div>
+  </article>
+
+  <article class="card kpi kpi--click" role="button" tabindex="0" data-kpi="others" aria-label="Abrir detalhes de outras origens">
+    <header><span class="micro">Outras origens em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span></header>
+    <div class="kpi__value" data-bind="kpi-others">R$ 0,00</div>
+  </article>
+</section>
+
 
     <section class="filters card filters--list" aria-label="Filtros de dados">
       <div class="filters__group">
@@ -137,15 +131,24 @@ $lastSync = isset($data['created_at']) ? date('d/m/Y H:i', (int)$data['created_a
     <div class="modal__overlay"></div>
     <div class="modal__panel">
       <header class="modal__head">
-        <h2 id="configTitle">ConfiguraÃ§Ãµes</h2>
+        <h2 id="configTitle">Configurações</h2>
         <button type="button" class="btn btn--ghost" data-modal="close" aria-label="Fechar configuraÃ§Ãµes">Fechar</button>
       </header>
       <div class="modal__body">
-        <div class="config-card">
-          <h3>Tema</h3>
-          <label><input type="radio" name="theme" value="dark" checked> Escuro</label>
-          <label><input type="radio" name="theme" value="light"> Claro</label>
-        </div>
+       <div class="config-card">
+  <h3>Tema</h3>
+  <div class="theme-toggle" id="themeToggle" data-active="dark">
+    <label class="theme-toggle__option">
+      <input type="radio" name="theme" value="dark" checked>
+      <span class="theme-toggle__label"><span class="theme-toggle__icon">🌙</span> Dark</span>
+    </label>
+    <label class="theme-toggle__option">
+      <input type="radio" name="theme" value="light">
+      <span class="theme-toggle__label"><span class="theme-toggle__icon">☀️</span> Light</span>
+    </label>
+    <span class="theme-toggle__indicator" aria-hidden="true"></span>
+  </div>
+</div>
         <div class="config-card">
           <h3>Cor de destaque</h3>
           <div class="hue-picker" id="huePicker">
