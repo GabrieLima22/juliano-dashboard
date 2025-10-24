@@ -1690,3 +1690,63 @@ body.theme-light .toast--error{
 .origin-card__head h3{ font-size:1rem; font-weight:800; }
 .origin-card__value{ font-size:1.45rem; font-weight:800; }
 .origin-card__meta{ margin-top:6px; font-size:.78rem; opacity:.9; }
+/* === Banner SEM CORTE e ~85% da altura original === */
+/* Mantém a arte completa (sem crop) */
+.banner--contain{
+  background-size: contain !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  background-color: var(--bg-soft-use);
+}
+
+/* Deixa o container ~15% mais baixo que o 21:5 original.
+   21:5  -> ratio 4.2
+   85%   -> ratio ~4.94  => 21 / 4.25  */
+.banner.banner--short{
+  aspect-ratio: 21 / 4.25 !important;  /* menos alto */
+  min-height: 115px !important;
+}
+
+/* Mobile: um tico mais raso pra caber melhor */
+@media (max-width:640px){
+  .banner.banner--short{
+    aspect-ratio: 21 / 4.4 !important;
+    min-height: 96px !important;
+  }
+}
+/* === BANNER (cover + ~85% da altura, sem bordas vazias) === */
+
+/* Ponto focal padrão (ajuste fino só mexendo nas variáveis) */
+:root{
+  --banner-x: 52%;
+  --banner-y: 50%;
+  --banner-x-m: 50%;
+  --banner-y-m: 44%;
+}
+
+/* cobre sempre o container */
+.banner{
+  background-size: cover !important;
+  background-position: var(--banner-x) var(--banner-y) !important;
+  background-repeat: no-repeat !important;
+}
+
+/* banner ~15% mais baixo que o 21:5 (≈85% da altura) */
+.banner.banner--short{
+  aspect-ratio: 21 / 4.94 !important; /* 4.2 / 0.85 */
+  min-height: 120px !important;
+}
+
+/* mobile: um pouco mais “raso” e com foco vertical ajustado */
+@media (max-width:640px){
+  .banner{
+    background-position: var(--banner-x-m) var(--banner-y-m) !important;
+  }
+  .banner.banner--short{
+    aspect-ratio: 21 / 5.6 !important;
+    min-height: 100px !important;
+  }
+}
+
+/* se tiver algum patch antigo alterando .banner (21/5.8, contain etc.),
+   isto aqui vence por usar seletores mais específicos e !important */
