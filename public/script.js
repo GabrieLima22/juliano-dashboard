@@ -125,7 +125,8 @@
     if(!container) return;
     container.querySelectorAll('.chip').forEach(function(chip){
       var isActive = chip.getAttribute(attr) === value;
-      chip.classList.toggle('chip--active', isActive);
+      chip.classList.toggle('chip--active', isActive);           // legado
+      chip.classList.toggle('is-active', isActive);              // novo (visu)
       chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
   }
@@ -213,31 +214,28 @@
       plCoversEl.textContent = proLabore.covers_until ? monthLabel(proLabore.covers_until) : '--';
     }
 
-    if(plBadgeEl){
-      var delta = toNumber(proLabore.delta_vs_today);
-      plBadgeEl.className = 'badge';
-      if(delta > 0){
-        plBadgeEl.className = 'badge badge--positive';
-        plBadgeEl.textContent = 'Adiantado +' + delta + 'm';
-      }else if(delta < 0){
-        plBadgeEl.className = 'badge badge--negative';
-        plBadgeEl.textContent = 'Atraso ' + Math.abs(delta) + 'm';
-      }else{
-        plBadgeEl.textContent = 'Em dia';
-      }
-    }
+    // total PL no recorte atual
+    var plTotalFiltered = relevant.reduce(function(sum, it){ return sum + (it.is_pl ? it.amount : 0); }, 0);
+    var kpiPlEl = document.querySelector('[data-bind="kpi-pl"]');
+    if(kpiPlEl){ kpiPlEl.textContent = formatBRL(plTotalFiltered); }
 
-    if(plExtraEl){
-      var monthlyTarget = toNumber(proLabore.monthly_target);
-      var residual = toNumber(proLabore.residual);
-      var missingNext = toNumber(proLabore.missing_for_next);
-      var advancedNext = toNumber(proLabore.advanced_for_next);
-      if(monthlyTarget > 0 && residual < monthlyTarget){
-        plExtraEl.textContent = 'Faltam ' + formatBRL(missingNext) + ' para o próximo';
+    // status (verde/âmbar/vermelho)
+    if(plBadgeEl){
+      var delta = toNumber(proLabore.delta_vs_today); // meses adiantado (+) ou atrasado (-)
+      plBadgeEl.className = 'badge';
+      if(delta >= 1){
+        plBadgeEl.classList.add('badge--good');
+        plBadgeEl.textContent = 'Adiantado +' + delta + 'm';
+      }else if(delta === 0){
+        plBadgeEl.classList.add('badge--warn');
+        plBadgeEl.textContent = 'Em dia';
       }else{
-        plExtraEl.textContent = 'Adiantado ' + formatBRL(advancedNext) + ' p/ próximo';
+        plBadgeEl.classList.add('badge--negative');
+        plBadgeEl.textContent = 'Atraso ' + Math.abs(delta) + 'm';
       }
     }
+    // removemos o texto "extra" do cartão (vai pro detalhe)
+    if(plExtraEl){ plExtraEl.textContent = ''; }
   }
 
   function renderList(){
@@ -324,6 +322,78 @@
     if(!(modal && modal.classList.contains('modal--open'))){
       body.classList.remove('no-scroll');
     }
+  }
+
+  function openKpiDrawer(which){
+    if(!drawer || !drawerBody) return;
+    var targetMonth = getTargetMonth();
+
+    // monta coleções
+    var monthTx = transactions.filter(function(t){
+      var ok = (state.month === 'all' ? (targetMonth ? t.ym === targetMonth : true) : t.ym === state.month);
+      if(state.origin !== 'all') ok = ok && (t.origin === state.origin);
+      if(state.q) ok = ok && t.origin.toLowerCase().includes(state.q);
+      return ok;
+    });
+
+    var title = 'Detalhes';
+    var head = '';
+    var bodyHTML = '';
+
+    if(which === 'month'){
+      title = 'Recebido em ' + (targetMonth ? monthLabel(targetMonth) : 'Todos');
+      // agrupa por origem
+      var map = {};
+      monthTx.forEach(function(t){
+        if(!map[t.origin]) map[t.origin] = { total:0, count:0 };
+        map[t.origin].total += t.amount; map[t.origin].count++;
+      });
+      var rows = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; }).map(function(o){
+        return '<div class="info-line js-origin" data-origin="'+escAttr(o)+'">' +
+                 '<div><strong>'+esc(o)+'</strong><span>'+map[o].count+' lançamento(s)</span></div>' +
+                 '<div class="info-line__totals"><span class="tag">'+formatBRL(map[o].total)+'</span></div>' +
+               '</div>';
+      }).join('');
+      bodyHTML = rows || '<div class="alert">Sem lançamentos neste filtro.</div>';
+    }
+
+    if(which === 'prolabore'){
+      title = 'Pró-labore';
+      var delta = toNumber(proLabore.delta_vs_today);
+      var cover = proLabore.covers_until ? monthLabel(proLabore.covers_until) : '--';
+      var residual = toNumber(proLabore.residual);
+      var missing = toNumber(proLabore.missing_for_next);
+      var tx = monthTx.filter(function(t){return t.is_pl;}).sort(function(a,b){ return timeLocal(b.date) - timeLocal(a.date); });
+      var list = tx.map(function(t){
+        return '<div class="info-line"><div><strong>'+dmyLocal(t.date)+'</strong><span>Referência '+esc(t.ym)+'</span></div><span class="tag">'+formatBRL(t.amount)+'</span></div>';
+      }).join('');
+      bodyHTML =
+        '<div class="info-line '+(delta<0?'is-danger':'')+'">'+
+          '<div><strong>Status</strong><span>'+ (delta>0?('Adiantado +'+delta+'m'):delta===0?'Em dia':'Atrasado '+Math.abs(delta)+'m') +'</span></div>'+
+          '<div class="info-line__totals"><span class="tag">Cobre até '+cover+'</span></div>'+
+        '</div>'+
+        '<div class="info-line"><div><strong>Residual</strong><span>Valor acumulado não fechado</span></div><span class="tag">'+formatBRL(residual)+'</span></div>'+
+        '<div class="info-line"><div><strong>Falta p/ próximo</strong><span>Até atingir a meta mensal</span></div><span class="tag '+(missing>0?'tag--danger':'tag--accent')+'">'+formatBRL(missing)+'</span></div>'+
+        '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato</h4></header>' + (list || '<div class="alert">Sem lançamentos PL no período.</div>') + '</div>';
+    }
+
+    if(which === 'others'){
+      title = 'Outras origens';
+      var oth = monthTx.filter(function(t){return !t.is_pl;}).sort(function(a,b){ return timeLocal(b.date) - timeLocal(a.date); });
+      var list2 = oth.map(function(t){
+        return '<div class="info-line"><div><strong>'+dmyLocal(t.date)+'</strong><span>'+esc(t.origin)+'</span></div><span class="tag">'+formatBRL(t.amount)+'</span></div>';
+      }).join('');
+      bodyHTML = list2 || '<div class="alert">Sem lançamentos de outras origens neste filtro.</div>';
+    }
+
+    if(drawerTitle) drawerTitle.textContent = title;
+    if(drawerSubtitle) drawerSubtitle.textContent = (state.month!=='all' ? monthLabel(state.month) : (targetMonth?monthLabel(targetMonth):'Todos'));
+    drawerBody.innerHTML = '<div class="drawer__list">'+bodyHTML+'</div>';
+
+    drawer.setAttribute('aria-hidden','false');
+    drawer.dataset.state='open';
+    drawer.classList.add('drawer--open');
+    body.classList.add('no-scroll');
   }
 
   function openModal(){
@@ -491,6 +561,30 @@
     searchInput.addEventListener('input', handleSearch);
   }
 
+  // KPIs abrindo o detalhe
+  document.addEventListener('click', function(ev){
+    var k = ev.target.closest('.kpi--click');
+    if(!k) return;
+    var which = k.getAttribute('data-kpi');
+    if(which) openKpiDrawer(which);
+  });
+  document.addEventListener('keydown', function(ev){
+    if((ev.key==='Enter' || ev.key===' ') && ev.target.closest('.kpi--click')){
+      ev.preventDefault();
+      var k = ev.target.closest('.kpi--click');
+      var which = k.getAttribute('data-kpi');
+      if(which) openKpiDrawer(which);
+    }
+  });
+
+  // dentro do drawer, se clicar numa origem listada, reaproveita openDrawer(origin)
+  if(drawer){
+    drawerBody?.addEventListener?.('click', function(ev){
+      var el = ev.target.closest('.js-origin');
+      if(el) openDrawer(el.getAttribute('data-origin')||'');
+    });
+  }
+
   document.addEventListener('click', function(event){
     if(event.target.closest('[data-open="config"]')){
       event.preventDefault();
@@ -538,6 +632,8 @@
     body.classList.add('theme-' + theme);
     try{ localStorage.setItem(storageThemeKey, theme); }catch(error){}
     themeRadios.forEach(function(radio){ radio.checked = (radio.value === theme); });
+    var tgl = document.getElementById('themeToggle');
+    if(tgl){ tgl.dataset.active = theme; }                 // <-- mantém o indicador deslizando
   }
 
   function setHue(hue){
@@ -568,26 +664,31 @@
     hueRange.addEventListener('input', function(){ setHue(hueRange.value); });
   }
 
-  if(huePicker && hueThumb){
+  if(huePicker){
     var dragging = false;
 
-    function updateFromEvent(event){
-      var point = event.touches ? event.touches[0] : event;
-      if(!point) return;
+    function posToHue(clientX){
       var rect = huePicker.getBoundingClientRect();
-      var pct = (point.clientX - rect.left) / rect.width;
+      var pct = (clientX - rect.left) / rect.width;
       pct = Math.max(0, Math.min(1, pct));
-      setHue(Math.round(pct * 360));
+      return Math.round(pct * 360);
     }
 
-    hueThumb.addEventListener('mousedown', function(){ dragging = true; });
-    document.addEventListener('mouseup', function(){ dragging = false; });
-    document.addEventListener('mousemove', function(event){ if(dragging) updateFromEvent(event); });
+    function startDrag(e){
+      dragging = true;
+      var p = e.touches ? e.touches[0] : e;
+      setHue(posToHue(p.clientX));
+      window.addEventListener('pointermove', moveDrag);
+      window.addEventListener('pointerup', endDrag, { once:true });
+    }
+    function moveDrag(e){
+      if(!dragging) return;
+      setHue(posToHue(e.clientX));
+    }
+    function endDrag(){ dragging = false; window.removeEventListener('pointermove', moveDrag); }
 
-    huePicker.addEventListener('click', updateFromEvent);
-    huePicker.addEventListener('touchstart', function(event){ dragging = true; updateFromEvent(event); });
-    document.addEventListener('touchend', function(){ dragging = false; });
-    document.addEventListener('touchmove', function(event){ if(dragging) updateFromEvent(event); });
+    huePicker.addEventListener('pointerdown', startDrag);
+    huePicker.addEventListener('click', function(e){ setHue(posToHue(e.clientX)); });
   }
 
   if(modal){
@@ -606,110 +707,7 @@
     });
   }
 
-  pollTimer = 
-/* === PATCH: Drawer para os 3 KPIs === */
-function ymAdd(ym, offset){
-  if(!/^(\d{4})-(\d{2})$/.test(ym||"")) return ym || "";
-  var p = ym.split("-").map(Number), y=p[0], m=p[1]-1;
-  var d = new Date(y, m, 1); d.setMonth(d.getMonth()+Number(offset||0));
-  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
-}
-
-function openKpi(kind){
-  if(!drawer) return;
-  var label = (function(){
-    var t = getTargetMonth();
-    return t ? monthLabel(t) : "Todos";
-  })();
-  function renderLines(list){
-    if(!list.length) return '<div class="alert">Sem lançamentos neste filtro.</div>';
-    return '<div class="drawer__list">' + list.join("") + '</div>';
-  }
-  function txLine(tx){
-    return '<div class="info-line">' +
-             '<div><strong>' + dmyLocal(tx.date) + '</strong><span>' + esc(tx.origin) + '</span></div>' +
-             '<span class="tag">' + formatBRL(tx.amount) + '</span>' +
-           '</div>';
-  }
-  if(kind === "month"){
-    var tMonth = getTargetMonth();
-    var rel = transactions.filter(function(x){ return tMonth ? x.ym === tMonth : true; });
-    var total = rel.reduce(function(s,x){return s+x.amount;},0);
-    var map = {};
-    rel.forEach(function(x){ if(!map[x.origin]) map[x.origin] = { total:0, count:0 }; map[x.origin].total += x.amount; map[x.origin].count++; });
-    var linesOrigins = Object.keys(map).sort(function(a,b){return map[b].total-map[a].total;}).map(function(k){
-      return '<div class="info-line">' +
-               '<div><strong>' + esc(k) + '</strong><span>' + (map[k].count) + ' lançamento' + (map[k].count===1?'':'s') + '</span></div>' +
-               '<span class="tag tag--accent">' + formatBRL(map[k].total) + '</span>' +
-             '</div>';
-    });
-    if(drawerTitle) drawerTitle.textContent = 'Recebidos em ' + label;
-    if(drawerSubtitle) drawerSubtitle.textContent = rel.length + ' lançamento' + (rel.length===1?'':'s');
-    drawerBody.innerHTML =
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Total</h4></header>' +
-      '<div class="drawer__number">' + formatBRL(total) + '</div></div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Por origem</h4></header>' +
-      renderLines(linesOrigins) + '</div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato</h4></header>' +
-      renderLines(rel.slice().sort(function(a,b){return timeLocal(b.date)-timeLocal(a.date);}).map(txLine)) + '</div>';
-  } else if(kind === "prolabore"){
-    var relPL = transactions.filter(function(x){ return x.is_pl; });
-    var totalPL = relPL.reduce(function(s,x){return s+x.amount;},0);
-    var delta = toNumber(proLabore.delta_vs_today);
-    var stateTxt = delta>0 ? ('Adiantado +' + delta + 'm') : (delta<0 ? ('Atraso ' + Math.abs(delta) + 'm') : 'Em dia');
-    if(drawerTitle) drawerTitle.textContent = 'Pró-labore';
-    if(drawerSubtitle) drawerSubtitle.textContent = stateTxt;
-    var cover = proLabore.covers_until ? monthLabel(proLabore.covers_until) : '--';
-    var miss = formatBRL(toNumber(proLabore.missing_for_next));
-    var adv  = formatBRL(toNumber(proLabore.advanced_for_next));
-    var next = monthLabel(proLabore.next_month_label || ymAdd(proLabore.covers_until||getInitialReference(), 1));
-    var resumo =
-      '<div class="info-line"><div><strong>Cobre até</strong><span>' + cover + '</span></div>' +
-      '<span class="tag ' + (delta<0?'tag--danger':'tag--accent') + '">' + esc(stateTxt) + '</span></div>' +
-      '<div class="info-line"><div><strong>Meta mensal</strong><span>' + formatBRL(proLabore.monthly_target||0) + '</span></div>' +
-      '<span class="tag">' + formatBRL(toNumber(proLabore.residual)) + ' acumulado</span></div>' +
-      '<div class="info-line"><div><strong>Próximo mês</strong><span>' + next + '</span></div>' +
-      '<span class="tag">' + (toNumber(proLabore.residual) < toNumber(proLabore.monthly_target) ? ('Faltam ' + miss) : ('Adiantado ' + adv)) + '</span></div>';
-    drawerBody.innerHTML =
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Resumo</h4></header>' +
-      resumo + '</div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato do pró-labore</h4></header>' +
-      (relPL.length ? '<div class="drawer__list">' + relPL.slice().sort(function(a,b){return timeLocal(b.date)-timeLocal(a.date);}).map(txLine).join("") + '</div>' : '<div class="alert">Sem lançamentos de pró-labore.</div>') +
-      '</div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Total recebido em pró-labore</h4></header>' +
-      '<div class="drawer__number">' + formatBRL(totalPL) + '</div></div>';
-  } else if(kind === "others"){
-    var tMonth2 = getTargetMonth();
-    var rel2 = transactions.filter(function(x){ var isOther = !x.is_pl; var monthOk = tMonth2 ? x.ym === tMonth2 : true; return isOther && monthOk; });
-    var total2 = rel2.reduce(function(s,x){return s+x.amount;},0);
-    var map2 = {};
-    rel2.forEach(function(x){ if(!map2[x.origin]) map2[x.origin] = { total:0, count:0 }; map2[x.origin].total += x.amount; map2[x.origin].count++; });
-    var linesOrigins2 = Object.keys(map2).sort(function(a,b){return map2[b].total-map2[a].total;}).map(function(k){
-      return '<div class="info-line">' +
-               '<div><strong>' + esc(k) + '</strong><span>' + map2[k].count + ' lançamento' + (map2[k].count===1?'':'s') + '</span></div>' +
-               '<span class="tag tag--accent">' + formatBRL(map2[k].total) + '</span>' +
-             '</div>';
-    });
-    if(drawerTitle) drawerTitle.textContent = 'Outras origens – ' + label;
-    if(drawerSubtitle) drawerSubtitle.textContent = rel2.length + ' lançamento' + (rel2.length===1?'':'s');
-    drawerBody.innerHTML =
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Total</h4></header>' +
-      '<div class="drawer__number">' + formatBRL(total2) + '</div></div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Por origem</h4></header>' +
-      renderLines(linesOrigins2) + '</div>' +
-      '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato</h4></header>' +
-      renderLines(rel2.slice().sort(function(a,b){return timeLocal(b.date)-timeLocal(a.date);}).map(txLine)) + '</div>';
-  }
-  drawer.setAttribute('aria-hidden','false');
-  drawer.dataset.state = 'open';
-  drawer.classList.add('drawer--open');
-  body.classList.add('no-scroll');
-}
-
-document.querySelectorAll('.card.kpi').forEach(function(el){
-  el.addEventListener('click', function(){ openKpi(el.getAttribute('data-kpi')); });
-  el.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openKpi(el.getAttribute('data-kpi')); } });
-});setInterval(function(){
+  pollTimer = setInterval(function(){
     if(document.visibilityState === 'visible' && !isSyncing){
       reloadData(false);
     }
