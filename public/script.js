@@ -1,15 +1,21 @@
+
 (function(){
   "use strict";
 
   var root = document.documentElement;
   var body = document.body;
 
-  var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   var POLL_INTERVAL = 5 * 60 * 1000;  // auto-sync a cada 5min
   var storageThemeKey = 'juliano:theme';
   var storageHueKey = 'juliano:hue';
   var isSyncing = false;
   var pollTimer = null;
+  var lastKpiView = null; // 'month' | 'prolabore' | 'others'
+
+  // modal e container do "Mapa do Pró-labore"
+  var plModal = document.querySelector('.modal[data-modal="pl-tracker"]');
+  var plContainer = document.getElementById('plTracker');
 
   function safeJSON(){
     var el = document.getElementById('dataset');
@@ -122,15 +128,14 @@
   }
 
   function setActiveChip(container, value, attr){
-    if(!container) return;
-    container.querySelectorAll('.chip').forEach(function(chip){
-      var isActive = chip.getAttribute(attr) === value;
-      chip.classList.toggle('chip--active', isActive);           // legado
-      chip.classList.toggle('is-active', isActive);              // novo (visu)
-      chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    });
-  }
-
+  if(!container) return;
+  container.querySelectorAll('.chip').forEach(function(chip){
+    var isActive = chip.getAttribute(attr) === value;
+    chip.classList.toggle('chip--active', isActive);
+    chip.classList.toggle('is-active', isActive);
+    chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
   function rebuildMonthChips(){
     if(!monthFilterEl) return;
     var months = Object.keys(totalsByMonth || {});
@@ -150,12 +155,64 @@
     var origins = Object.keys(totalsByOrigin || {});
     origins.sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
 
-    var html = '<button type="button" class="chip" data-origin="all" aria-pressed="false">Todas</button>';
+    var html = '<button type="button" class="chip" data-origin="all" aria-pressed="false"><span class="dot"></span>Todas</button>';
     html += origins.map(function(origin){
-      return '<button type="button" class="chip" data-origin="' + escAttr(origin) + '" aria-pressed="false">' + esc(origin) + '</button>';
+      return '<button type="button" class="chip" data-origin="' + escAttr(origin) + '" aria-pressed="false"><span class="dot"></span>' + esc(origin) + '</button>';
     }).join('');
 
     originFilterEl.innerHTML = html;
+  }
+
+  // Segmented months (V4) – inclui mês corrente e referência
+  function buildSegMonths(){
+    if(!segMonthsEl) return;
+    var set = Object.create(null);
+    Object.keys(totalsByMonth || {}).forEach(function(k){ set[k]=1; });
+    if(referenceMonth) set[referenceMonth]=1;
+    (function(){ var d=new Date(); var nowYm=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); set[nowYm]=1; })();
+    var list = Object.keys(set).filter(function(k){ return /^(\d{4})-(\d{2})$/.test(k); }).sort().reverse().slice(0,6);
+
+    var inner = '<div class="thumb"></div>' + ['all'].concat(list).map(function(v){
+      return '<button type="button" data-val="'+escAttr(v)+'">'+ (v==='all' ? 'Todos' : esc(monthLabel(v))) +'</button>';
+    }).join('');
+    segMonthsEl.innerHTML = inner;
+
+    if(segMonthsEl.__inited) { segMonthsEl.__highlight && segMonthsEl.__highlight(state.month || 'all'); return; }
+    segMonthsEl.__inited = true;
+    var thumb = segMonthsEl.querySelector('.thumb');
+    function moveThumb(target){
+      if(!thumb || !target) return;
+      var r = target.getBoundingClientRect();
+      var pr = segMonthsEl.getBoundingClientRect();
+      var x = r.left - pr.left + 2;
+      thumb.style.transform = 'translateX('+x+'px)';
+      thumb.style.width = r.width + 'px';
+    }
+    function highlight(val){
+      segMonthsEl.querySelectorAll('button[data-val]').forEach(function(b){ b.classList.toggle('is-active', b.getAttribute('data-val')===val); });
+      var active = segMonthsEl.querySelector('button[data-val="'+CSS.escape(val)+'"]') || segMonthsEl.querySelector('button[data-val]');
+      moveThumb(active);
+    }
+    segMonthsEl.__highlight = highlight;
+    segMonthsEl.addEventListener('click', function(e){
+      var b = e.target.closest('button[data-val]'); if(!b) return;
+      state.month = b.getAttribute('data-val');
+      setActiveChip(monthFilterEl, state.month, 'data-month');
+      calcKpis(); renderList();
+      // Atualiza tags ativas da barra
+      var activeFiltersEl = document.getElementById('activeFilters');
+      if(activeFiltersEl){
+        var tags=[];
+        if(state.month !== 'all'){ tags.push('<span class="filter-tag" data-kind="month">Mês: '+esc(monthLabel(state.month))+' <button data-remove="month" aria-label="Remover mês">×</button></span>'); }
+        if(state.origin !== 'all'){ tags.push('<span class="filter-tag" data-kind="origin">Origem: '+esc(state.origin)+' <button data-remove="origin" aria-label="Remover origem">×</button></span>'); }
+        if(state.q){ tags.push('<span class="filter-tag" data-kind="q">Busca: '+esc(state.q)+' <button data-remove="q" aria-label="Limpar busca">×</button></span>'); }
+        activeFiltersEl.innerHTML = tags.join('') || '<span>Nenhum filtro ativo</span>';
+      }
+      highlight(state.month);
+      b.classList.add('pop'); setTimeout(function(){ b.classList.remove('pop'); }, 320);
+    });
+    window.addEventListener('resize', function(){ highlight(state.month || 'all'); });
+    highlight(state.month || 'all');
   }
 
   function getTargetMonth(){
@@ -219,22 +276,22 @@
     var kpiPlEl = document.querySelector('[data-bind="kpi-pl"]');
     if(kpiPlEl){ kpiPlEl.textContent = formatBRL(plTotalFiltered); }
 
-    // status (verde/âmbar/vermelho)
-    if(plBadgeEl){
-      var delta = toNumber(proLabore.delta_vs_today); // meses adiantado (+) ou atrasado (-)
+    // status (classe + texto coerentes)
+    if (plBadgeEl){
+      var delta = toNumber(proLabore.delta_vs_today); // + = atrasado, - = adiantado
       plBadgeEl.className = 'badge';
-      if(delta >= 1){
-        plBadgeEl.classList.add('badge--good');
-        plBadgeEl.textContent = 'Adiantado +' + delta + 'm';
-      }else if(delta === 0){
-        plBadgeEl.classList.add('badge--warn');
-        plBadgeEl.textContent = 'Em dia';
-      }else{
+      if (delta > 0){
         plBadgeEl.classList.add('badge--negative');
-        plBadgeEl.textContent = 'Atraso ' + Math.abs(delta) + 'm';
+        plBadgeEl.textContent = 'Atrasado +' + delta + 'm';
+      } else if (delta === 0){
+        plBadgeEl.textContent = 'Em dia';
+      } else {
+        plBadgeEl.classList.add('badge--positive');
+        plBadgeEl.textContent = 'Adiantado ' + Math.abs(delta) + 'm';
       }
     }
-    // removemos o texto "extra" do cartão (vai pro detalhe)
+
+    // removemos o texto "extra" do cartÃ£o (vai pro detalhe)
     if(plExtraEl){ plExtraEl.textContent = ''; }
   }
 
@@ -319,16 +376,38 @@
     drawer.setAttribute('aria-hidden', 'true');
     drawer.dataset.state = 'closed';
     drawer.classList.remove('drawer--open');
-    if(!(modal && modal.classList.contains('modal--open'))){
+    // libera scroll se nÃ£o houver nenhum modal aberto
+    if(!document.querySelector('.modal.modal--open')){
       body.classList.remove('no-scroll');
     }
+  }
+
+  function goToOriginDetail(origin){
+    if (lastKpiView){
+      drawer.dataset.prev = lastKpiView; // lembra de qual aba viemos
+      var btn = drawer.querySelector('[data-drawer="close"]');
+      if (btn){
+        btn.textContent = 'Voltar';
+        btn.setAttribute('data-drawer-role','back');
+      }
+    }
+    openDrawer(origin);
   }
 
   function openKpiDrawer(which){
     if(!drawer || !drawerBody) return;
     var targetMonth = getTargetMonth();
+    lastKpiView = which;
 
-    // monta coleções
+    // ao entrar na raiz do kpi, botÃ£o Ã© "Fechar" (sem back)
+    var btnClose = drawer && drawer.querySelector('[data-drawer="close"]');
+    if (btnClose){
+      btnClose.textContent = 'Fechar';
+      btnClose.removeAttribute('data-drawer-role');
+    }
+    drawer.removeAttribute('data-prev');
+
+    // monta coleÃ§Ãµes
     var monthTx = transactions.filter(function(t){
       var ok = (state.month === 'all' ? (targetMonth ? t.ym === targetMonth : true) : t.ym === state.month);
       if(state.origin !== 'all') ok = ok && (t.origin === state.origin);
@@ -337,7 +416,6 @@
     });
 
     var title = 'Detalhes';
-    var head = '';
     var bodyHTML = '';
 
     if(which === 'month'){
@@ -349,11 +427,12 @@
         map[t.origin].total += t.amount; map[t.origin].count++;
       });
       var rows = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; }).map(function(o){
-        return '<div class="info-line js-origin" data-origin="'+escAttr(o)+'">' +
+        return '<div class="info-line js-origin" data-origin="'+escAttr(o)+'" role="button" tabindex="0">' +
                  '<div><strong>'+esc(o)+'</strong><span>'+map[o].count+' lançamento(s)</span></div>' +
                  '<div class="info-line__totals"><span class="tag">'+formatBRL(map[o].total)+'</span></div>' +
                '</div>';
       }).join('');
+
       bodyHTML = rows || '<div class="alert">Sem lançamentos neste filtro.</div>';
     }
 
@@ -368,8 +447,8 @@
         return '<div class="info-line"><div><strong>'+dmyLocal(t.date)+'</strong><span>Referência '+esc(t.ym)+'</span></div><span class="tag">'+formatBRL(t.amount)+'</span></div>';
       }).join('');
       bodyHTML =
-        '<div class="info-line '+(delta<0?'is-danger':'')+'">'+
-          '<div><strong>Status</strong><span>'+ (delta>0?('Adiantado +'+delta+'m'):delta===0?'Em dia':'Atrasado '+Math.abs(delta)+'m') +'</span></div>'+
+        '<div class="info-line '+(delta<0?'is-danger':'')+' js-plmap" data-open="pl-tracker" role="button" tabindex="0" data-tip="Abrir mapa do Pró-labore">'+
+          '<div><strong>Status</strong><span>'+ (delta>0?('Atrasado +'+delta+'m'):delta===0?'Em dia':'Adiantado '+Math.abs(delta)+'m') +'</span></div>'+
           '<div class="info-line__totals"><span class="tag">Cobre até '+cover+'</span></div>'+
         '</div>'+
         '<div class="info-line"><div><strong>Residual</strong><span>Valor acumulado não fechado</span></div><span class="tag">'+formatBRL(residual)+'</span></div>'+
@@ -396,17 +475,83 @@
     body.classList.add('no-scroll');
   }
 
-  function openModal(){
-    if(!modal) return;
-    modal.setAttribute('aria-hidden', 'false');
-    modal.classList.add('modal--open');
+  // ====== Helpers de ano-mÃªs (YYYY-MM) ======
+  function ymAdd(ym, delta){
+    var m = /^(\d{4})-(\d{2})$/.exec(String(ym||''));
+    if(!m) return ym || '';
+    var y = +m[1], mm = +m[2] - 1; // 0-11
+    var d = new Date(y, mm + (delta||0), 1);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+  function ymCmp(a,b){ return String(a).localeCompare(String(b)); } // YYYY-MM compara bem
+
+  // ====== Render do "Mapa do Pró-labore" ======
+  function renderPlTracker(){
+    if(!plContainer) return;
+
+    var start = getTargetMonth() || referenceMonth || computeReferenceMonth(proLabore.payday_day || 20);
+    var months = [];
+    for(var i=0;i<6;i++){ months.push(ymAdd(start, i)); }
+
+    var covers = proLabore.covers_until || '';
+    var next   = covers ? ymAdd(covers, 1) : '';
+    var residual = toNumber(proLabore.residual);
+    var missing  = Math.max(0, toNumber(proLabore.missing_for_next));
+    var pctNext  = (residual + missing) > 0 ? Math.max(0, Math.min(1, residual / (residual + missing))) : 0;
+
+    var html = months.map(function(ym){
+      var pct = 0, note = '-';
+      if(covers && ymCmp(ym, covers) <= 0){
+        pct = 1; note = 'Coberto';
+      }else if(next && ym === next){
+        pct = pctNext; note = Math.round(pctNext*100) + '% do próximo';
+      }
+      // altura da barrinha (min 24px pra nÃ£o sumir)
+      var h = Math.round(24 + pct*72);
+      var ymParts = ym.split('-');
+      var mName = MONTHS[parseInt(ymParts[1],10)] || ymParts[1];
+      var yName = ymParts[0];
+
+      return ''+
+        '<div class="forecast__item" aria-label="'+esc(monthLabel(ym))+'">'+
+          '<div class="forecast__bar" style="height:'+h+'px"></div>'+
+          '<strong>'+esc(mName)+'</strong>'+
+          '<em>'+esc(yName)+'</em>'+
+          '<span class="micro">'+esc(note)+'</span>'+
+        '</div>';
+    }).join('');
+
+    plContainer.innerHTML =
+      '<div class="forecast">'+ html +'</div>'+
+      '<div class="alert">Residual: <strong>'+formatBRL(residual)+'</strong> Falta p/ próximo: <strong>'+formatBRL(missing)+'</strong>  Cobre até <strong>'+ (covers ? monthLabel(covers) : '--') +'</strong></div>';
+  }
+
+  function openPlTracker(){
+    if(!plModal) return;
+    renderPlTracker();
+
+    // Se veio do drawer, renomeia "Fechar" -> "Voltar"
+    var cameFromDrawer = drawer && drawer.dataset.state === 'open';
+    var closeBtn = plModal.querySelector('[data-modal="close"]');
+    if (closeBtn) {
+      if (cameFromDrawer) {
+        closeBtn.textContent = 'Voltar';
+        closeBtn.setAttribute('data-pl-role', 'back');
+      } else {
+        closeBtn.textContent = 'Fechar';
+        closeBtn.removeAttribute('data-pl-role');
+      }
+    }
+
+    plModal.setAttribute('aria-hidden','false');
+    plModal.classList.add('modal--open');
     body.classList.add('no-scroll');
   }
 
-  function closeModal(){
-    if(!modal) return;
-    modal.setAttribute('aria-hidden', 'true');
-    modal.classList.remove('modal--open');
+  function closePlTracker(){
+    if(!plModal) return;
+    plModal.setAttribute('aria-hidden','true');
+    plModal.classList.remove('modal--open');
     if(!(drawer && drawer.dataset.state === 'open')){
       body.classList.remove('no-scroll');
     }
@@ -434,6 +579,7 @@
 
       rebuildMonthChips();
       rebuildOriginChips();
+      try{ if(typeof buildSegMonths==='function') buildSegMonths(); }catch(e){}
 
       if(state.month !== 'all' && monthFilterEl && !monthFilterEl.querySelector('[data-month="' + state.month + '"]')){
         state.month = 'all';
@@ -450,7 +596,11 @@
 
       calcKpis();
       renderList();
-      
+
+      // se o mapa estiver aberto, re-renderiza com os dados novos
+      if (plModal && plModal.classList.contains('modal--open')) {
+        renderPlTracker();
+      }
     } catch(error){
       var isNetwork = error && error.name === 'TypeError';
       var message = isNetwork ? 'Falha de rede ao sincronizar. Verifique sua conexão.' : 'Falha ao sincronizar. ' + error.message;
@@ -471,26 +621,27 @@
   var lastSyncEl = document.querySelector('[data-bind="last-sync"]');
   var monthFilterEl = document.querySelector('[data-filter="month"]');
   var originFilterEl = document.querySelector('[data-filter="origin"]');
-  var searchInput = document.getElementById('filterSearch');
+  var searchInput = document.getElementById('filterSearchV4') || document.getElementById('filterSearch');
+  var segMonthsEl = document.getElementById('segMonths');
   var originListEl = document.getElementById('originList');
   var drawer = document.querySelector('.drawer');
   var drawerTitle = drawer ? drawer.querySelector('[data-bind="drawer-title"]') : null;
   var drawerSubtitle = drawer ? drawer.querySelector('[data-bind="drawer-subtitle"]') : null;
   var drawerBody = drawer ? drawer.querySelector('[data-bind="drawer-body"]') : null;
-  var modal = document.querySelector('.modal[data-modal="config"]');
 
- var dataset = safeJSON();
- var transactions = normalizeTransactions(dataset.transactions);
- var proLabore = dataset.pro_labore || {};
- var totalsByMonth = dataset.kpis && dataset.kpis.by_month ? dataset.kpis.by_month : {};
- var totalsByOrigin = dataset.kpis && dataset.kpis.by_origin ? dataset.kpis.by_origin : {};
- var referenceMonth = getInitialReference();
+  var dataset = safeJSON();
+  var transactions = normalizeTransactions(dataset.transactions);
+  var proLabore = dataset.pro_labore || {};
+  var totalsByMonth = dataset.kpis && dataset.kpis.by_month ? dataset.kpis.by_month : {};
+  var totalsByOrigin = dataset.kpis && dataset.kpis.by_origin ? dataset.kpis.by_origin : {};
+  var referenceMonth = getInitialReference();
   body.setAttribute('data-reference-month', referenceMonth || '');
 
   var state = { month: 'all', origin: 'all', q: '' };
 
   rebuildMonthChips();
   rebuildOriginChips();
+  try{ if(typeof buildSegMonths==='function') buildSegMonths(); }catch(e){}
 
   if(referenceMonth && monthFilterEl && monthFilterEl.querySelector('[data-month="' + referenceMonth + '"]')){
     state.month = referenceMonth;
@@ -502,15 +653,27 @@
   calcKpis();
   renderList();
 
-
-  if(drawer){
+  // (Ãºnico) handler do drawer: overlay/fechar/voltar
+  if (drawer) {
     drawer.addEventListener('click', function(event){
-      if(event.target.matches('.drawer__overlay') || event.target.closest('[data-drawer="close"]')){
-        closeDrawer();
+      if (event.target.matches('.drawer__overlay')){ closeDrawer(); return; }
+      var btn = event.target.closest('[data-drawer="close"]');
+      if (!btn) return;
+
+      if (btn.getAttribute('data-drawer-role') === 'back' && drawer.dataset.prev){
+        event.preventDefault();
+        var prev = drawer.dataset.prev;
+        drawer.removeAttribute('data-prev');
+        btn.textContent = 'Fechar';
+        btn.removeAttribute('data-drawer-role');
+        openKpiDrawer(prev);
+        return;
       }
+      closeDrawer();
     });
   }
 
+  // clique em cards de origem abre detalhe
   if(originListEl){
     originListEl.addEventListener('click', function(event){
       var card = event.target.closest('.js-origin');
@@ -561,7 +724,48 @@
     searchInput.addEventListener('input', handleSearch);
   }
 
-  // KPIs abrindo o detalhe
+  // dentro do drawer, se clicar numa origem listada, abre o detalhe + ativa â€œVoltarâ€
+  if (drawer && drawerBody){
+    drawerBody.addEventListener('click', function(ev){
+      var el = ev.target.closest('.js-origin');
+      if (el) goToOriginDetail(el.getAttribute('data-origin')||'');
+    });
+  }
+
+  // --- Mapa do Pró-labore: abrir por clique (botÃ£o ou bloco .js-plmap)
+  document.addEventListener('click', function (event) {
+    var openBtn = event.target.closest('[data-open="pl-tracker"], .js-plmap');
+    if (openBtn) {
+      event.preventDefault();
+      openPlTracker();
+      return;
+    }
+  });
+
+  // abrir pl-tracker com teclado (Enter/EspaÃ§o)
+  document.addEventListener('keydown', function (ev) {
+    if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.closest('[data-open="pl-tracker"], .js-plmap')) {
+      ev.preventDefault();
+      openPlTracker();
+    }
+  });
+
+  // fechar o mapa do Pró-labore (X/overlay/back) â€” handler prÃ³prio do modal
+  if (plModal) {
+    plModal.addEventListener('click', function (event) {
+      if (
+        event.target.matches('[data-pl-role="back"]') ||
+        event.target.matches('[data-modal="close"]') ||
+        event.target.matches('.modal__overlay')
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        closePlTracker();
+      }
+    });
+  }
+
+  // KPIs: abrir detalhe no drawer
   document.addEventListener('click', function(ev){
     var k = ev.target.closest('.kpi--click');
     if(!k) return;
@@ -577,33 +781,28 @@
     }
   });
 
-  // dentro do drawer, se clicar numa origem listada, reaproveita openDrawer(origin)
   if(drawer){
-    drawerBody?.addEventListener?.('click', function(ev){
-      var el = ev.target.closest('.js-origin');
-      if(el) openDrawer(el.getAttribute('data-origin')||'');
+    drawer.addEventListener('keydown', function(event){
+      if(event.key === 'Escape'){
+        closeDrawer();
+      }
     });
   }
 
-  document.addEventListener('click', function(event){
-    if(event.target.closest('[data-open="config"]')){
-      event.preventDefault();
-      openModal();
+  // ESC global: fecha pl-tracker > drawer
+  window.addEventListener('keydown', function(event){
+    if(event.key !== 'Escape') return;
+    if (plModal && plModal.classList.contains('modal--open')) {
+      closePlTracker();
       return;
     }
-    if(event.target.matches('[data-modal="close"]') || event.target.matches('.modal__overlay')){
-      closeModal();
-    }
-  });
-
-  window.addEventListener('keydown', function(event){
-    if(event.key === 'Escape'){
-      closeModal();
+    if (drawer && drawer.dataset.state === 'open') {
       closeDrawer();
+      return;
     }
   });
 
- // kick inicial pra já pegar dados atualizados após carregar
+  // kick inicial pra jÃ¡ pegar dados atualizados apÃ³s carregar
   setTimeout(function(){ if(!isSyncing){ reloadData(false); } }, 1200);
 
   var themeRadios = document.querySelectorAll('input[name="theme"]');
@@ -619,7 +818,7 @@
     var pct = val / 360 * 100;
     huePicker.style.setProperty('--pos', pct + '%');
     huePicker.style.setProperty('--hue', val);
-    if(hueValueEl) hueValueEl.textContent = Math.round(val) + '°';
+    if(hueValueEl) hueValueEl.textContent = Math.round(val) + 'Â°';
     if(hueThumb) hueThumb.setAttribute('aria-valuenow', String(Math.round(val)));
     if(hueNowEl) hueNowEl.style.background = 'hsl(' + val + ' 85% 55%)';
   }
@@ -633,7 +832,7 @@
     try{ localStorage.setItem(storageThemeKey, theme); }catch(error){}
     themeRadios.forEach(function(radio){ radio.checked = (radio.value === theme); });
     var tgl = document.getElementById('themeToggle');
-    if(tgl){ tgl.dataset.active = theme; }                 // <-- mantém o indicador deslizando
+    if(tgl){ tgl.dataset.active = theme; }
   }
 
   function setHue(hue){
@@ -652,6 +851,23 @@
     setTheme('dark');
     setHue(145);
   }
+
+  // Ripple visual no campo de busca da barra V4
+  (function(){
+    var searchBox = document.getElementById('searchBox');
+    if(!searchBox) return;
+    searchBox.addEventListener('pointerdown', function(e){
+      var ink = searchBox.querySelector('.ink');
+      if(!ink) return;
+      var r = searchBox.getBoundingClientRect();
+      var dx = e.clientX - r.left; var dy = e.clientY - r.top;
+      ink.classList.remove('play');
+      ink.style.setProperty('--x', dx + 'px');
+      ink.style.setProperty('--y', dy + 'px');
+      void ink.offsetWidth; // reflow
+      ink.classList.add('play');
+    });
+  })();
 
   document.addEventListener('change', function(event){
     var target = event.target;
@@ -691,22 +907,15 @@
     huePicker.addEventListener('click', function(e){ setHue(posToHue(e.clientX)); });
   }
 
-  if(modal){
-    modal.addEventListener('click', function(event){
-      if(event.target.matches('[data-modal="close"]') || event.target.matches('.modal__overlay')){
-        closeModal();
-      }
-    });
-  }
+  // expÃµe helpers usados no patch do boot()
+  window.calcKpis = calcKpis;
+  window.renderList = renderList;
+  window.setActiveChip = setActiveChip;
+  window.monthLabel = monthLabel;
+  window.esc = esc;
+  window.state = state;
 
-  if(drawer){
-    drawer.addEventListener('keydown', function(event){
-      if(event.key === 'Escape'){
-        closeDrawer();
-      }
-    });
-  }
-
+  // polling de atualizaÃ§Ã£o
   pollTimer = setInterval(function(){
     if(document.visibilityState === 'visible' && !isSyncing){
       reloadData(false);
@@ -718,6 +927,273 @@
       reloadData(false);
     }
   });
+
+})();
+
+/* ===========================
+   Boot: modais genÃ©ricos + patch de filtros
+   =========================== */
+(function(){
+  "use strict";
+
+  // --- inicializa sÃ³ depois do DOM pronto ---
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  function boot(){
+    var body = document.body;
+
+    function getModal(name){ return document.querySelector('.modal[data-modal="'+ name +'"]'); }
+
+    function openModal(name='config'){
+      var m = getModal(name);
+      if(!m) return;
+      m.setAttribute('aria-hidden','false');
+      m.classList.add('modal--open');
+      body.classList.add('no-scroll');
+    }
+
+    function closeModal(name='config'){
+      var m = getModal(name);
+      if(!m) return;
+      m.setAttribute('aria-hidden','true');
+      m.classList.remove('modal--open');
+      // sÃ³ libera o scroll se nenhum outro modal/drawer estiver aberto
+      var anyOpen = document.querySelector('.modal.modal--open') || (document.querySelector('.drawer')?.dataset.state === 'open');
+      if(!anyOpen){ body.classList.remove('no-scroll'); }
+    }
+
+    // ==== Patch: filtro compacto (rail + busca + tags) ====
+    (function(){
+      var monthChipsEl   = document.querySelector('.chips[data-filter="month"]');
+      var originChipsEl  = document.querySelector('.chips[data-filter="origin"]');
+      var searchInput    = document.getElementById('filterSearchV4') || document.getElementById('filterSearch');
+      var clearBtn       = document.getElementById('clearFilters');
+      var activeFiltersEl= document.getElementById('activeFilters');
+      // elementos do palette (modal de filtro avancado)
+      var paletteMonthEl  = document.getElementById('paletteMonth');
+      var paletteOriginEl = document.getElementById('paletteOrigin');
+      var paletteSearch   = document.getElementById('paletteSearch');
+      var paletteClear    = document.getElementById('paletteClear');
+
+      window.state = window.state || { month:'all', origin:'all', q:'' };
+
+      function renderActiveFilters(){
+        if(!activeFiltersEl) return;
+        var tags = [];
+        if(state.month !== 'all'){
+          tags.push('<span class="filter-tag">MÃªs: '+esc(monthLabel(state.month))+' <button data-remove="month" aria-label="Remover mÃªs">Ã—</button></span>');
+        }
+        if(state.origin !== 'all'){
+          tags.push('<span class="filter-tag">Origem: '+esc(state.origin)+' <button data-remove="origin" aria-label="Remover origem">Ã—</button></span>');
+        }
+        if(state.q){
+          tags.push('<span class="filter-tag">Busca: '+esc(state.q)+' <button data-remove="q" aria-label="Limpar busca">Ã—</button></span>');
+        }
+        activeFiltersEl.innerHTML = tags.join('') || '<span>Nenhum filtro ativo</span>';
+      }
+
+      function applyFilters(){
+        if (typeof calcKpis === 'function') calcKpis();
+        if (typeof renderList === 'function') renderList();
+        renderActiveFilters();
+      }
+
+      if(monthChipsEl){
+        monthChipsEl.addEventListener('click', function(e){
+          var btn = e.target.closest('[data-month]');
+          if(!btn) return;
+          state.month = btn.getAttribute('data-month');
+          setActiveChip(monthChipsEl, state.month, 'data-month');
+          if(paletteMonthEl) setActiveChip(paletteMonthEl, state.month, 'data-month');
+          applyFilters();
+        });
+      }
+
+      if(originChipsEl){
+        originChipsEl.addEventListener('click', function(e){
+          var btn = e.target.closest('[data-origin]');
+          if(!btn) return;
+          state.origin = btn.getAttribute('data-origin');
+          setActiveChip(originChipsEl, state.origin, 'data-origin');
+          if(paletteOriginEl) setActiveChip(paletteOriginEl, state.origin, 'data-origin');
+          applyFilters();
+        });
+      }
+
+      if(searchInput){
+        var t;
+        function onSearch(){
+          clearTimeout(t);
+          t = setTimeout(function(){
+            state.q = (searchInput.value||'').trim().toLowerCase();
+            if(paletteSearch && paletteSearch !== document.activeElement){ paletteSearch.value = searchInput.value; }
+            applyFilters();
+          }, 120);
+        }
+        searchInput.addEventListener('input', onSearch);
+      }
+
+      if(clearBtn){
+        clearBtn.addEventListener('click', function(){
+          state.month = 'all';
+          state.origin = 'all';
+          state.q = '';
+          if(searchInput) searchInput.value = '';
+          if(paletteSearch) paletteSearch.value = '';
+          if(monthChipsEl)  setActiveChip(monthChipsEl,  'all', 'data-month');
+          if(originChipsEl) setActiveChip(originChipsEl, 'all', 'data-origin');
+          if(paletteMonthEl)  setActiveChip(paletteMonthEl,  'all', 'data-month');
+          if(paletteOriginEl) setActiveChip(paletteOriginEl, 'all', 'data-origin');
+          applyFilters();
+        });
+      }
+
+      var ref = document.body.getAttribute('data-reference-month');
+      if(monthChipsEl && ref && monthChipsEl.querySelector('[data-month="'+ref+'"]')){
+        state.month = ref;
+        setActiveChip(monthChipsEl, state.month, 'data-month');
+      }else if(monthChipsEl){
+        setActiveChip(monthChipsEl, 'all', 'data-month');
+      }
+      if(originChipsEl) setActiveChip(originChipsEl, 'all', 'data-origin');
+
+      renderActiveFilters();
+
+      // remover tags ativas (month/origin/q)
+      if(activeFiltersEl){
+        activeFiltersEl.addEventListener('click', function(e){
+          var rm = e.target.closest('[data-remove]');
+          if(!rm) return;
+          var k = rm.getAttribute('data-remove');
+          if(k === 'q'){
+            state.q = '';
+            if(searchInput) searchInput.value='';
+          } else if(k === 'month'){
+            state.month = 'all';
+            if(monthChipsEl) setActiveChip(monthChipsEl, 'all', 'data-month');
+            var seg = document.getElementById('segMonths');
+            if(seg && seg.__highlight) seg.__highlight('all');
+          } else if(k === 'origin'){
+            state.origin = 'all';
+            if(originChipsEl) setActiveChip(originChipsEl, 'all', 'data-origin');
+          }
+          applyFilters();
+        });
+      }
+
+      // ===== Palette (modal) bindings =====
+      function syncPaletteFromMain(){
+        if(paletteMonthEl && monthChipsEl){ paletteMonthEl.innerHTML = monthChipsEl.innerHTML; }
+        if(paletteOriginEl && originChipsEl){ paletteOriginEl.innerHTML = originChipsEl.innerHTML; }
+        if(paletteMonthEl)  setActiveChip(paletteMonthEl,  state.month,  'data-month');
+        if(paletteOriginEl) setActiveChip(paletteOriginEl, state.origin, 'data-origin');
+        if(paletteSearch)   paletteSearch.value = state.q || '';
+      }
+
+      if(paletteMonthEl){
+        paletteMonthEl.addEventListener('click', function(e){
+          var btn = e.target.closest('[data-month]');
+          if(!btn) return;
+          state.month = btn.getAttribute('data-month');
+          setActiveChip(paletteMonthEl, state.month, 'data-month');
+          if(monthChipsEl) setActiveChip(monthChipsEl, state.month, 'data-month');
+          applyFilters();
+        });
+      }
+      if(paletteOriginEl){
+        paletteOriginEl.addEventListener('click', function(e){
+          var btn = e.target.closest('[data-origin]');
+          if(!btn) return;
+          state.origin = btn.getAttribute('data-origin');
+          setActiveChip(paletteOriginEl, state.origin, 'data-origin');
+          if(originChipsEl) setActiveChip(originChipsEl, state.origin, 'data-origin');
+          applyFilters();
+        });
+      }
+      if(paletteSearch){
+        var tt;
+        paletteSearch.addEventListener('input', function(){
+          clearTimeout(tt);
+          tt = setTimeout(function(){
+            state.q = (paletteSearch.value||'').trim().toLowerCase();
+            if(searchInput && searchInput !== document.activeElement){ searchInput.value = paletteSearch.value; }
+            applyFilters();
+          }, 120);
+        });
+      }
+      if(paletteClear){
+        paletteClear.addEventListener('click', function(){
+          state.month = 'all'; state.origin = 'all'; state.q = '';
+          if(paletteSearch) paletteSearch.value = '';
+          if(searchInput) searchInput.value = '';
+          if(monthChipsEl) setActiveChip(monthChipsEl, 'all', 'data-month');
+          if(originChipsEl) setActiveChip(originChipsEl, 'all', 'data-origin');
+          if(paletteMonthEl) setActiveChip(paletteMonthEl, 'all', 'data-month');
+          if(paletteOriginEl) setActiveChip(paletteOriginEl, 'all', 'data-origin');
+          applyFilters();
+        });
+      }
+    })();
+
+    // --- handlers globais de modal (config + outros que usem data-modal) ---
+    document.addEventListener('click', function(event){
+      var openCfg = event.target.closest('[data-open="config"]');
+      if(openCfg){
+        event.preventDefault();
+        openModal('config');
+        return;
+      }
+      var openFilter = event.target.closest('[data-open="filter"]');
+      if(openFilter){
+        event.preventDefault();
+        if(typeof syncPaletteFromMain === 'function'){ syncPaletteFromMain(); }
+        else {
+          // tenta montar via elementos existentes
+          var pm = document.getElementById('paletteMonth');
+          var po = document.getElementById('paletteOrigin');
+          var mm = document.querySelector('.chips[data-filter="month"]');
+          var mo = document.querySelector('.chips[data-filter="origin"]');
+          if(pm && mm) pm.innerHTML = mm.innerHTML;
+          if(po && mo) po.innerHTML = mo.innerHTML;
+        }
+        openModal('filter');
+        return;
+      }
+
+      if (event.target.matches('[data-modal="close"]') || event.target.matches('.modal__overlay')){
+        var host = event.target.closest('.modal');
+        if(host){
+          event.preventDefault();
+          closeModal(host.dataset.modal || 'config');
+        }
+      }
+    });
+
+    // ESC fecha o modal focado
+    window.addEventListener('keydown', function(event){
+      if(event.key !== 'Escape') return;
+      var topOpen = document.querySelector('.modal.modal--open:last-of-type');
+      if(topOpen){ closeModal(topOpen.dataset.modal || 'config'); }
+    });
+
+    // Atalho Ctrl/Cmd + K abre o filtro avancado
+    window.addEventListener('keydown', function(event){
+      var key = String(event.key || '').toLowerCase();
+      if((event.ctrlKey || event.metaKey) && key === 'k'){
+        event.preventDefault();
+        var host = document.querySelector('.modal[data-modal="filter"]');
+        if(host){
+          var build = (typeof syncPaletteFromMain === 'function') ? syncPaletteFromMain : null;
+          if(build) build();
+          openModal('filter');
+        }
+      }
+    });
+  }
 
 })();
 
