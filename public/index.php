@@ -9,7 +9,8 @@ require __DIR__ . '/../app/helpers.php';
 require __DIR__ . '/../app/logic.php';
 $cfg = require __DIR__ . '/../app/config.php';
 
-$data = get_data(false);
+$data = get_data(true);
+
 [$referenceYm] = current_reference_ym((int)($cfg['PRO_LABORE_DAY'] ?? 20));
 
 $monthNames = [
