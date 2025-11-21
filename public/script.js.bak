@@ -1,0 +1,622 @@
+(function(){
+  "use strict";
+
+  var root = document.documentElement;
+  var body = document.body;
+
+  var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  var POLL_INTERVAL = 5 * 60 * 1000;  // auto-sync a cada 5min
+  var storageThemeKey = 'juliano:theme';
+  var storageHueKey = 'juliano:hue';
+  var isSyncing = false;
+  var pollTimer = null;
+
+  function safeJSON(){
+    var el = document.getElementById('dataset');
+    if(!el || !el.textContent){ return {}; }
+    try{ return JSON.parse(el.textContent); }catch(error){ return {}; }
+  }
+
+  function toNumber(value){
+    var n = Number(value);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function esc(value){
+    value = value == null ? '' : String(value);
+    return value.replace(/[&<>"']/g, function(ch){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[ch]);
+    });
+  }
+
+  function escAttr(value){
+    return esc(value).replace(/\n/g, '&#10;');
+  }
+
+  function formatBRL(value){
+    return 'R$ ' + Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function parseLocalISO(iso){
+    if(!iso) return null;
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+    if(!match) return null;
+    var dt = new Date(+match[1], +match[2] - 1, +match[3]);
+    if(isNaN(dt.getTime())) return null;
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  }
+
+  function dmyLocal(iso){
+    var dt = parseLocalISO(iso);
+    return dt ? dt.toLocaleDateString('pt-BR') : '--';
+  }
+
+  function timeLocal(iso){
+    var dt = parseLocalISO(iso);
+    return dt ? dt.getTime() : 0;
+  }
+
+  function monthLabel(ym){
+    if(!ym || !/^(\d{4})-(\d{2})$/.test(ym)) return ym || '--';
+    var parts = ym.split('-');
+    return (MONTHS[parseInt(parts[1], 10)] || parts[1]) + '-' + parts[0];
+  }
+
+  function formatTimestamp(seconds){
+    if(!seconds) return '-';
+    var dt = new Date(seconds * 1000);
+    if(isNaN(dt.getTime())) return '-';
+    return dt.toLocaleString('pt-BR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function debounce(fn, delay){
+    var timer;
+    return function(){
+      var ctx = this;
+      var args = arguments;
+      clearTimeout(timer);
+      timer = setTimeout(function(){ fn.apply(ctx, args); }, delay || 150);
+    };
+  }
+
+  function showToast(message, kind){
+    if(!toastEl) return;
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    toastEl.classList.toggle('toast--error', kind === 'error');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.hidden = true; }, 5000);
+  }
+
+  function normalizeTransactions(raw){
+    if(!Array.isArray(raw)) return [];
+    return raw.map(function(item){
+      return {
+        origin: String(item && item.origin ? item.origin : '-'),
+        amount: toNumber(item && item.amount),
+        date: item && item.date ? item.date : null,
+        ym: item && item.ym ? item.ym : (item && item.date ? String(item.date).slice(0,7) : ''),
+        is_pl: Boolean(item && item.is_pl)
+      };
+    });
+  }
+
+  function getInitialReference(){
+    if(proLabore.reference_ym){
+      return proLabore.reference_ym;
+    }
+    var attr = body.getAttribute('data-reference-month');
+    return attr || computeReferenceMonth(proLabore.payday_day || 20);
+  }
+
+  function computeReferenceMonth(day){
+    var cutoff = Number(day) || 20;
+    var now = new Date();
+    var base = new Date(now.getFullYear(), now.getMonth(), 1);
+    var cut = new Date(now.getFullYear(), now.getMonth(), cutoff);
+    if(now < cut){
+      base.setMonth(base.getMonth() - 1);
+    }
+    return base.getFullYear() + '-' + String(base.getMonth() + 1).padStart(2, '0');
+  }
+
+  function setActiveChip(container, value, attr){
+    if(!container) return;
+    container.querySelectorAll('.chip').forEach(function(chip){
+      var isActive = chip.getAttribute(attr) === value;
+      chip.classList.toggle('chip--active', isActive);
+      chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function rebuildMonthChips(){
+    if(!monthFilterEl) return;
+    var months = Object.keys(totalsByMonth || {});
+    months.sort().reverse();
+    months = months.slice(0, 12);
+
+    var html = '<button type="button" class="chip" data-month="all" aria-pressed="false">Todos</button>';
+    html += months.map(function(ym){
+      return '<button type="button" class="chip" data-month="' + escAttr(ym) + '" aria-pressed="false">' + esc(monthLabel(ym)) + '</button>';
+    }).join('');
+
+    monthFilterEl.innerHTML = html;
+  }
+
+  function rebuildOriginChips(){
+    if(!originFilterEl) return;
+    var origins = Object.keys(totalsByOrigin || {});
+    origins.sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
+
+    var html = '<button type="button" class="chip" data-origin="all" aria-pressed="false">Todas</button>';
+    html += origins.map(function(origin){
+      return '<button type="button" class="chip" data-origin="' + escAttr(origin) + '" aria-pressed="false">' + esc(origin) + '</button>';
+    }).join('');
+
+    originFilterEl.innerHTML = html;
+  }
+
+  function getTargetMonth(){
+    if(state.month !== 'all'){
+      return state.month;
+    }
+    if(proLabore.reference_ym){
+      return proLabore.reference_ym;
+    }
+    return referenceMonth || '';
+  }
+
+  function filteredTransactions(){
+    return transactions.filter(function(item){
+      if(state.month !== 'all' && item.ym !== state.month) return false;
+      if(state.origin !== 'all' && item.origin !== state.origin) return false;
+      if(state.q && item.origin.toLowerCase().indexOf(state.q) === -1) return false;
+      return true;
+    });
+  }
+
+  function calcKpis(){
+    var targetMonth = getTargetMonth();
+    var relevant = transactions.filter(function(item){
+      var monthOk = targetMonth ? (item.ym === targetMonth) : true;
+      if(!monthOk) return false;
+      if(state.origin !== 'all' && item.origin !== state.origin) return false;
+      if(state.q && item.origin.toLowerCase().indexOf(state.q) === -1) return false;
+      return true;
+    });
+
+    var monthTotal = relevant.reduce(function(sum, item){ return sum + item.amount; }, 0);
+    var proTotal = relevant.reduce(function(sum, item){ return sum + (item.is_pl ? item.amount : 0); }, 0);
+    var othersTotal = Math.max(0, monthTotal - proTotal);
+    var label = targetMonth ? monthLabel(targetMonth) : 'Todos';
+
+    if(kpiMonthEl){
+      var head = kpiMonthEl.closest('.kpi');
+      if(head){
+        var micro = head.querySelector('header .micro');
+        if(micro){ micro.textContent = 'Recebido em ' + label; }
+      }
+      kpiMonthEl.textContent = formatBRL(monthTotal);
+    }
+
+    if(kpiOthersEl){
+      var head2 = kpiOthersEl.closest('.kpi');
+      if(head2){
+        var micro2 = head2.querySelector('header .micro');
+        if(micro2){ micro2.textContent = 'Outras origens em ' + label; }
+      }
+      kpiOthersEl.textContent = formatBRL(othersTotal);
+    }
+
+    if(plCoversEl){
+      plCoversEl.textContent = proLabore.covers_until ? monthLabel(proLabore.covers_until) : '--';
+    }
+
+    if(plBadgeEl){
+      var delta = toNumber(proLabore.delta_vs_today);
+      plBadgeEl.className = 'badge';
+      if(delta > 0){
+        plBadgeEl.className = 'badge badge--positive';
+        plBadgeEl.textContent = 'Adiantado +' + delta + 'm';
+      }else if(delta < 0){
+        plBadgeEl.className = 'badge badge--negative';
+        plBadgeEl.textContent = 'Atraso ' + Math.abs(delta) + 'm';
+      }else{
+        plBadgeEl.textContent = 'Em dia';
+      }
+    }
+
+    if(plExtraEl){
+      var monthlyTarget = toNumber(proLabore.monthly_target);
+      var residual = toNumber(proLabore.residual);
+      var missingNext = toNumber(proLabore.missing_for_next);
+      var advancedNext = toNumber(proLabore.advanced_for_next);
+      if(monthlyTarget > 0 && residual < monthlyTarget){
+        plExtraEl.textContent = 'Faltam ' + formatBRL(missingNext) + ' para o próximo';
+      }else{
+        plExtraEl.textContent = 'Adiantado ' + formatBRL(advancedNext) + ' p/ próximo';
+      }
+    }
+  }
+
+  function renderList(){
+    if(!originListEl) return;
+    var filtered = filteredTransactions();
+    if(!filtered.length){
+      originListEl.innerHTML = '<div class="card empty">Nenhum lançamento encontrado para o filtro atual.</div>';
+      return;
+    }
+
+    var groups = Object.create(null);
+    filtered.forEach(function(item){
+      var key = item.origin || '-';
+      if(!groups[key]){
+        groups[key] = { origin: key, total: 0, count: 0 };
+      }
+      groups[key].total += item.amount;
+      groups[key].count += 1;
+    });
+
+    var items = Object.keys(groups).map(function(key){ return groups[key]; });
+    items.sort(function(a, b){ return (b.total || 0) - (a.total || 0); });
+
+    var monthChip = state.month !== 'all' ? '<span class="chip chip--ghost">' + esc(monthLabel(state.month)) + '</span>' : '';
+    var html = items.map(function(group){
+      return '<article class="card origin-card js-origin" role="listitem" tabindex="0" data-origin="' + escAttr(group.origin) + '">' +
+               '<header class="origin-card__head"><h3>' + esc(group.origin) + '</h3>' + monthChip + '</header>' +
+               '<div class="origin-card__value">' + formatBRL(group.total) + '</div>' +
+               '<div class="origin-card__meta">' + group.count + ' lançamento' + (group.count === 1 ? '' : 's') + '</div>' +
+             '</article>';
+    }).join('');
+
+    originListEl.innerHTML = '<div role="list" class="origin-list">' + html + '</div>';
+  }
+
+  function openDrawer(origin){
+    if(!drawer) return;
+    var filtered = filteredTransactions().filter(function(item){ return item.origin === origin; });
+    var total = filtered.reduce(function(sum, item){ return sum + item.amount; }, 0);
+
+    if(drawerTitle){ drawerTitle.textContent = origin; }
+    if(drawerSubtitle){
+      var tokens = [];
+      if(state.month !== 'all'){ tokens.push(monthLabel(state.month)); }
+      tokens.push(filtered.length + ' lançamento' + (filtered.length === 1 ? '' : 's'));
+      drawerSubtitle.textContent = tokens.join(' - ');
+    }
+
+    if(drawerBody){
+      var lines = filtered.slice().sort(function(a,b){ return timeLocal(b.date) - timeLocal(a.date); }).map(function(item){
+        return '<div class="info-line">' +
+                 '<div><strong>' + dmyLocal(item.date) + '</strong><span>' + esc(item.ym || '--') + '</span></div>' +
+                 '<span class="tag">' + formatBRL(item.amount) + '</span>' +
+               '</div>';
+      }).join('');
+
+      if(lines){
+        lines = '<div class="drawer__list">' + lines + '</div>';
+      }else{
+        lines = '<div class="alert">Sem lançamentos neste filtro.</div>';
+      }
+
+      drawerBody.innerHTML = '<div class="drawer__section">' +
+        '<header class="drawer__section-head"><h4>Extrato</h4></header>' +
+        lines +
+      '</div>' +
+      '<div class="drawer__section">' +
+        '<header class="drawer__section-head"><h4>Total</h4></header>' +
+        '<div class="drawer__number">' + formatBRL(total) + '</div>' +
+      '</div>';
+    }
+
+    drawer.setAttribute('aria-hidden', 'false');
+    drawer.dataset.state = 'open';
+    drawer.classList.add('drawer--open');
+    body.classList.add('no-scroll');
+  }
+
+  function closeDrawer(){
+    if(!drawer) return;
+    drawer.setAttribute('aria-hidden', 'true');
+    drawer.dataset.state = 'closed';
+    drawer.classList.remove('drawer--open');
+    if(!(modal && modal.classList.contains('modal--open'))){
+      body.classList.remove('no-scroll');
+    }
+  }
+
+  function openModal(){
+    if(!modal) return;
+    modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('modal--open');
+    body.classList.add('no-scroll');
+  }
+
+  function closeModal(){
+    if(!modal) return;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('modal--open');
+    if(!(drawer && drawer.dataset.state === 'open')){
+      body.classList.remove('no-scroll');
+    }
+  }
+
+  async function reloadData(force){
+    if(isSyncing){
+      return;
+    }
+    isSyncing = true;
+    try{
+      var url = 'api.php' + (force ? '?refresh=1' : '');
+      var response = await fetch(url, { cache: 'no-store' });
+      if(!response.ok){
+        throw new Error('HTTP ' + response.status);
+      }
+      dataset = await response.json();
+      transactions = normalizeTransactions(dataset.transactions);
+      proLabore = dataset.pro_labore || {};
+      totalsByMonth = dataset.kpis && dataset.kpis.by_month ? dataset.kpis.by_month : {};
+      totalsByOrigin = dataset.kpis && dataset.kpis.by_origin ? dataset.kpis.by_origin : {};
+
+      referenceMonth = proLabore.reference_ym || computeReferenceMonth(proLabore.payday_day || 20);
+      body.setAttribute('data-reference-month', referenceMonth || '');
+
+      rebuildMonthChips();
+      rebuildOriginChips();
+
+      if(state.month !== 'all' && monthFilterEl && !monthFilterEl.querySelector('[data-month="' + state.month + '"]')){
+        state.month = 'all';
+      }
+      if(referenceMonth && state.month === 'all' && monthFilterEl && monthFilterEl.querySelector('[data-month="' + referenceMonth + '"]')){
+        state.month = referenceMonth;
+      }
+      if(state.origin !== 'all' && originFilterEl && !originFilterEl.querySelector('[data-origin="' + state.origin + '"]')){
+        state.origin = 'all';
+      }
+
+      setActiveChip(monthFilterEl, state.month, 'data-month');
+      setActiveChip(originFilterEl, state.origin, 'data-origin');
+
+      calcKpis();
+      renderList();
+      
+    } catch(error){
+      var isNetwork = error && error.name === 'TypeError';
+      var message = isNetwork ? 'Falha de rede ao sincronizar. Verifique sua conexão.' : 'Falha ao sincronizar. ' + error.message;
+      console.error(message, error);
+      showToast(message, 'error');
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  var kpiMonthEl = document.querySelector('[data-bind="kpi-month"]');
+  var kpiOthersEl = document.querySelector('[data-bind="kpi-others"]');
+  var plCoversEl = document.querySelector('[data-bind="pl-covers"]');
+  var plBadgeEl = document.querySelector('[data-bind="pl-badge"]');
+  var plExtraEl = document.querySelector('[data-bind="pl-extra"]');
+  var lastSyncEl = document.querySelector('[data-bind="last-sync"]');
+  var monthFilterEl = document.querySelector('[data-filter="month"]');
+  var originFilterEl = document.querySelector('[data-filter="origin"]');
+  var searchInput = document.getElementById('filterSearch');
+  var originListEl = document.getElementById('originList');
+  var drawer = document.querySelector('.drawer');
+  var drawerTitle = drawer ? drawer.querySelector('[data-bind="drawer-title"]') : null;
+  var drawerSubtitle = drawer ? drawer.querySelector('[data-bind="drawer-subtitle"]') : null;
+  var drawerBody = drawer ? drawer.querySelector('[data-bind="drawer-body"]') : null;
+  var modal = document.querySelector('.modal[data-modal="config"]');
+
+ var dataset = safeJSON();
+ var transactions = normalizeTransactions(dataset.transactions);
+ var proLabore = dataset.pro_labore || {};
+ var totalsByMonth = dataset.kpis && dataset.kpis.by_month ? dataset.kpis.by_month : {};
+ var totalsByOrigin = dataset.kpis && dataset.kpis.by_origin ? dataset.kpis.by_origin : {};
+ var referenceMonth = getInitialReference();
+  body.setAttribute('data-reference-month', referenceMonth || '');
+
+  var state = { month: 'all', origin: 'all', q: '' };
+
+  rebuildMonthChips();
+  rebuildOriginChips();
+
+  if(referenceMonth && monthFilterEl && monthFilterEl.querySelector('[data-month="' + referenceMonth + '"]')){
+    state.month = referenceMonth;
+  }
+
+  setActiveChip(monthFilterEl, state.month, 'data-month');
+  setActiveChip(originFilterEl, state.origin, 'data-origin');
+
+  calcKpis();
+  renderList();
+
+
+  if(drawer){
+    drawer.addEventListener('click', function(event){
+      if(event.target.matches('.drawer__overlay') || event.target.closest('[data-drawer="close"]')){
+        closeDrawer();
+      }
+    });
+  }
+
+  if(originListEl){
+    originListEl.addEventListener('click', function(event){
+      var card = event.target.closest('.js-origin');
+      if(!card) return;
+      openDrawer(card.getAttribute('data-origin') || '');
+    });
+    originListEl.addEventListener('keydown', function(event){
+      if(event.key === 'Enter' || event.key === ' '){
+        var card = event.target.closest('.js-origin');
+        if(card){
+          event.preventDefault();
+          openDrawer(card.getAttribute('data-origin') || '');
+        }
+      }
+    });
+  }
+
+  if(monthFilterEl){
+    monthFilterEl.addEventListener('click', function(event){
+      var chip = event.target.closest('.chip');
+      if(!chip) return;
+      var value = chip.getAttribute('data-month') || 'all';
+      state.month = value;
+      setActiveChip(monthFilterEl, value, 'data-month');
+      renderList();
+      calcKpis();
+    });
+  }
+
+  if(originFilterEl){
+    originFilterEl.addEventListener('click', function(event){
+      var chip = event.target.closest('.chip');
+      if(!chip) return;
+      var value = chip.getAttribute('data-origin') || 'all';
+      state.origin = value;
+      setActiveChip(originFilterEl, value, 'data-origin');
+      renderList();
+      calcKpis();
+    });
+  }
+
+  if(searchInput){
+    var handleSearch = debounce(function(){
+      state.q = (searchInput.value || '').trim().toLowerCase();
+      renderList();
+      calcKpis();
+    }, 150);
+    searchInput.addEventListener('input', handleSearch);
+  }
+
+  document.addEventListener('click', function(event){
+    if(event.target.closest('[data-open="config"]')){
+      event.preventDefault();
+      openModal();
+      return;
+    }
+    if(event.target.matches('[data-modal="close"]') || event.target.matches('.modal__overlay')){
+      closeModal();
+    }
+  });
+
+  window.addEventListener('keydown', function(event){
+    if(event.key === 'Escape'){
+      closeModal();
+      closeDrawer();
+    }
+  });
+
+ // kick inicial pra já pegar dados atualizados após carregar
+  setTimeout(function(){ if(!isSyncing){ reloadData(false); } }, 1200);
+
+  var themeRadios = document.querySelectorAll('input[name="theme"]');
+  var hueRange = document.getElementById('hue');
+  var huePicker = document.getElementById('huePicker');
+  var hueThumb = document.getElementById('hueThumb');
+  var hueValueEl = document.getElementById('hueValue');
+  var hueNowEl = document.getElementById('hueNow');
+
+  function updateHueUI(hue){
+    if(!huePicker) return;
+    var val = Math.max(0, Math.min(360, Number(hue) || 0));
+    var pct = val / 360 * 100;
+    huePicker.style.setProperty('--pos', pct + '%');
+    huePicker.style.setProperty('--hue', val);
+    if(hueValueEl) hueValueEl.textContent = Math.round(val) + '°';
+    if(hueThumb) hueThumb.setAttribute('aria-valuenow', String(Math.round(val)));
+    if(hueNowEl) hueNowEl.style.background = 'hsl(' + val + ' 85% 55%)';
+  }
+
+  function setTheme(theme){
+    if(theme !== 'light' && theme !== 'dark'){ theme = 'dark'; }
+    root.classList.remove('theme-dark', 'theme-light');
+    body.classList.remove('theme-dark', 'theme-light');
+    root.classList.add('theme-' + theme);
+    body.classList.add('theme-' + theme);
+    try{ localStorage.setItem(storageThemeKey, theme); }catch(error){}
+    themeRadios.forEach(function(radio){ radio.checked = (radio.value === theme); });
+  }
+
+  function setHue(hue){
+    var val = Math.max(0, Math.min(360, Number(hue)));
+    if(isNaN(val)) val = 145;
+    root.style.setProperty('--accent-h', String(val));
+    try{ localStorage.setItem(storageHueKey, String(val)); }catch(error){}
+    if(hueRange) hueRange.value = String(val);
+    updateHueUI(val);
+  }
+
+  try {
+    setTheme(localStorage.getItem(storageThemeKey) || 'dark');
+    setHue(localStorage.getItem(storageHueKey) || 145);
+  } catch(error) {
+    setTheme('dark');
+    setHue(145);
+  }
+
+  document.addEventListener('change', function(event){
+    var target = event.target;
+    if(target && target.name === 'theme'){
+      setTheme(target.value);
+    }
+  });
+
+  if(hueRange){
+    hueRange.addEventListener('input', function(){ setHue(hueRange.value); });
+  }
+
+  if(huePicker && hueThumb){
+    var dragging = false;
+
+    function updateFromEvent(event){
+      var point = event.touches ? event.touches[0] : event;
+      if(!point) return;
+      var rect = huePicker.getBoundingClientRect();
+      var pct = (point.clientX - rect.left) / rect.width;
+      pct = Math.max(0, Math.min(1, pct));
+      setHue(Math.round(pct * 360));
+    }
+
+    hueThumb.addEventListener('mousedown', function(){ dragging = true; });
+    document.addEventListener('mouseup', function(){ dragging = false; });
+    document.addEventListener('mousemove', function(event){ if(dragging) updateFromEvent(event); });
+
+    huePicker.addEventListener('click', updateFromEvent);
+    huePicker.addEventListener('touchstart', function(event){ dragging = true; updateFromEvent(event); });
+    document.addEventListener('touchend', function(){ dragging = false; });
+    document.addEventListener('touchmove', function(event){ if(dragging) updateFromEvent(event); });
+  }
+
+  if(modal){
+    modal.addEventListener('click', function(event){
+      if(event.target.matches('[data-modal="close"]') || event.target.matches('.modal__overlay')){
+        closeModal();
+      }
+    });
+  }
+
+  if(drawer){
+    drawer.addEventListener('keydown', function(event){
+      if(event.key === 'Escape'){
+        closeDrawer();
+      }
+    });
+  }
+
+  pollTimer = setInterval(function(){
+    if(document.visibilityState === 'visible' && !isSyncing){
+      reloadData(false);
+    }
+  }, POLL_INTERVAL);
+
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && !isSyncing){
+      reloadData(false);
+    }
+  });
+
+})();
+
