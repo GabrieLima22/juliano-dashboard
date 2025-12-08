@@ -1,4 +1,4 @@
-    <?php
+<?php
 session_start();
 $_SESSION = [];
 session_destroy();
@@ -8,11 +8,10 @@ setcookie('remember_me', '', [
     'expires' => time() - 3600,
     'path' => '/',
     'secure' => false,
-    'httponly' => true, 
+    'httponly' => true,
     'samesite' => 'Lax',
 ]);
-?>
-<!DOCTYPE html>
+?><!DOCTYPE html>
 <html>
 <head>
     <title>Saindo...</title>
