@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="background-blob blob-green"></div>
     </div>
     <div class="login-page">
-        <div class="login-image-side" style="background-image: url('assets/CEOjml3.jpg');">
+        <div class="login-image-side" style="background-image: url('assets/ceoJML3.jpg');">
             <!-- A imagem e um fundo de CSS para melhor controle -->
         </div>
         <div class="login-form-side">
