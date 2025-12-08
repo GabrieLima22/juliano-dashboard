@@ -1,5 +1,21 @@
 <?php
+session_start();
 
+// Recria sessao via cookie ""continuar logado"", se valido
+$rememberSecret = 'jml-remember-2025';
+$rememberHash = hash_hmac('sha256', 'diretoria', $rememberSecret);
+if ((!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true)
+    && isset($_COOKIE['remember_me'])
+    && hash_equals($rememberHash, (string)$_COOKIE['remember_me'])) {
+    $_SESSION['loggedin'] = true;
+    $_SESSION['username'] = 'diretoria';
+}
+
+// Verifica se o usuario esta logado, senao redireciona para a pagina de login
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    header('Location: login.php');
+    exit;
+}
 
 header('Content-Type: text/html; charset=UTF-8');
 ini_set('default_charset', 'UTF-8');
@@ -61,9 +77,12 @@ $lastSync = isset($data['created_at']) ? date('d/m/Y H:i', (int)$data['created_a
     <figure class="banner banner--short" role="img"
             aria-label="Banner CEO JML: Juliano â€” Pessoas, ServiÃ§os, Tecnologias">
       <div class="banner__tools">
-        <button class="chip chip--glass banner__config" type="button" data-open="config" aria-label="Abrir configuraÃ§Ãµes">
+        <button class="chip chip--glass banner__config" type="button" data-open="config" aria-label="Abrir configurações">
           <span>Configurações</span>
         </button>
+        <a href="logout.php" class="chip chip--glass" aria-label="Sair da conta">
+          <span>Sair</span>
+        </a>
       </div>
     </figure>
 
@@ -80,9 +99,9 @@ $lastSync = isset($data['created_at']) ? date('d/m/Y H:i', (int)$data['created_a
         <div class="kpi__status"><span class="badge" data-bind="pl-badge">Em dia</span></div>
       </article>
 
-      <article class="card kpi kpi--click" role="button" tabindex="0" data-kpi="others" aria-label="Abrir detalhes de outras origens">
-        <header><span class="micro">Outras origens em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span></header>
-        <div class="kpi__value" data-bind="kpi-others">R$ 0,00</div>
+      <article class="card kpi kpi--click" role="button" tabindex="0" data-kpi="ajuda-custo" aria-label="Abrir detalhes de Ajuda de Custo - Brasil">
+        <header><span class="micro">Ajuda de Custo - Brasil em <?php echo htmlspecialchars($referenceLabel, ENT_QUOTES, 'UTF-8'); ?></span></header>
+        <div class="kpi__value" data-bind="kpi-ajuda">R$ 0,00</div>
       </article>
     </section>
 <section class="filters" aria-label="Filtros de dados">

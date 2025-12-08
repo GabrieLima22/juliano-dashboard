@@ -167,6 +167,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
               color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dashboardFadeIn 0.5s ease-out;
+}
+
+@keyframes dashboardFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 body.no-scroll {
@@ -387,14 +397,21 @@ body.bgfx::after {
   .banner {
     aspect-ratio: 21 / 6.5;
     min-height: 110px;
-    margin-bottom: 20px;
-    border-radius: var(--r20);
+    margin-bottom: 76px;
+    border-radius: var(--r24);
     background-position: 35% 40%;
+    overflow: visible;
   }
 
-  /* Esconder botão de config do banner no mobile */
+  /* Move as acoes para fora do banner no mobile para nao cobrir a imagem */
   .banner__tools {
-    display: none;
+    position: absolute;
+    inset: auto 12px -52px 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    z-index: 2;
   }
 }
 
@@ -411,6 +428,10 @@ body.bgfx::after {
     grid-template-columns: 1fr;
     gap: 16px;
     margin-bottom: 24px;
+  }
+
+  .kpi {
+    border-radius: var(--r24); /* Mais arredondado no mobile */
   }
 }
 
@@ -758,7 +779,7 @@ body.bgfx::after {
   }
 
   .filters__header {
-    display: block;
+    display: none; /* Esconde botão duplicado - já tem no banner */
   }
 
   .filters__group {
@@ -787,64 +808,7 @@ body.bgfx::after {
     display: none;
   }
 
-  /* Indicadores de scroll com setas nas laterais */
-  .filters__chips[data-filter="month"]::before,
-  .filters__chips[data-filter="month"]::after {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 32px;
-    pointer-events: none;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--accent-1);
-  }
-
-  .filters__chips[data-filter="month"]::before {
-    content: "‹";
-    left: 0;
-    background: linear-gradient(
-      to right,
-      rgba(15, 23, 41, 1) 0%,
-      rgba(15, 23, 41, 0.95) 60%,
-      transparent 100%
-    );
-    padding-left: 2px;
-  }
-
-  .filters__chips[data-filter="month"]::after {
-    content: "›";
-    right: 0;
-    background: linear-gradient(
-      to left,
-      rgba(15, 23, 41, 1) 0%,
-      rgba(15, 23, 41, 0.95) 60%,
-      transparent 100%
-    );
-    padding-right: 2px;
-  }
-
-  :where(html.theme-light, body.theme-light) .filters__chips[data-filter="month"]::before {
-    background: linear-gradient(
-      to right,
-      rgba(255, 255, 255, 1) 0%,
-      rgba(255, 255, 255, 0.95) 60%,
-      transparent 100%
-    );
-  }
-
-  :where(html.theme-light, body.theme-light) .filters__chips[data-filter="month"]::after {
-    background: linear-gradient(
-      to left,
-      rgba(255, 255, 255, 1) 0%,
-      rgba(255, 255, 255, 0.95) 60%,
-      transparent 100%
-    );
-  }
+  /* Indicadores de scroll removidos - ficou muito feio no mobile */
 
   .chip {
     padding: 10px 18px;
@@ -858,11 +822,18 @@ body.bgfx::after {
   }
 }
 
+@media (max-width: 640px) {
+  .filters {
+    border-radius: var(--r24); /* Mais arredondado no mobile */
+  }
+}
+
 @media (max-width: 480px) {
   .filters {
     padding: 16px;
     gap: 16px;
     margin-bottom: 16px;
+    border-radius: var(--r24);
   }
 
   .chip {
@@ -2151,12 +2122,26 @@ body.bgfx::after {
 }
 
 @media (max-width: 640px) {
+  .kpi {
+    padding: 20px;
+    min-height: 160px;
+  }
+
   .kpi__value {
-    font-size: clamp(24px, 8vw, 32px);
+    font-size: clamp(22px, 6.5vw, 28px);
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   .amount {
-    font-size: clamp(20px, 6vw, 28px);
+    font-size: clamp(18px, 5vw, 24px);
+    word-break: break-word;
+  }
+
+  /* Cards da lista mais arredondados no mobile */
+  .list .card {
+    border-radius: var(--r20);
+    padding: 18px 20px;
   }
 }
 

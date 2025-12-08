@@ -298,7 +298,9 @@ var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'J
 
     var monthTotal = relevant.reduce(function(sum, item){ return sum + item.amount; }, 0);
     var proTotal = relevant.reduce(function(sum, item){ return sum + (item.is_pl ? item.amount : 0); }, 0);
-    var othersTotal = Math.max(0, monthTotal - proTotal);
+    var ajudaTotal = relevant.reduce(function(sum, item){
+      return sum + (item.origin === 'AJUDA DE CUSTO-BRASIL' ? item.amount : 0);
+    }, 0);
     var label = targetMonth ? monthLabel(targetMonth) : 'Todos';
 
     if(kpiMonthEl){
@@ -310,13 +312,13 @@ var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'J
       kpiMonthEl.textContent = formatBRL(monthTotal);
     }
 
-    if(kpiOthersEl){
-      var head2 = kpiOthersEl.closest('.kpi');
+    if(kpiAjudaEl){
+      var head2 = kpiAjudaEl.closest('.kpi');
       if(head2){
         var micro2 = head2.querySelector('header .micro');
-        if(micro2){ micro2.textContent = 'Outras origens em ' + label; }
+        if(micro2){ micro2.textContent = 'Ajuda de Custo - Brasil em ' + label; }
       }
-      kpiOthersEl.textContent = formatBRL(othersTotal);
+      kpiAjudaEl.textContent = formatBRL(ajudaTotal);
     }
 
     if(plCoversEl){
@@ -508,13 +510,17 @@ var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'J
         '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato</h4></header>' + (list || '<div class="alert">Sem lançamentos PL no período.</div>') + '</div>';
     }
 
-    if(which === 'others'){
-      title = 'Outras origens';
-      var oth = monthTx.filter(function(t){return !t.is_pl;}).sort(function(a,b){ return timeLocal(b.date) - timeLocal(a.date); });
-      var list2 = oth.map(function(t){
-        return '<div class="info-line"><div><strong>'+dmyLocal(t.date)+'</strong><span>'+esc(t.origin)+'</span></div><span class="tag">'+formatBRL(t.amount)+'</span></div>';
+    if(which === 'ajuda-custo'){
+      title = 'Ajuda de Custo - Brasil';
+      var ajuda = monthTx.filter(function(t){return t.origin === 'AJUDA DE CUSTO-BRASIL';}).sort(function(a,b){ return timeLocal(b.date) - timeLocal(a.date); });
+      var totalAjuda = ajuda.reduce(function(sum, t){ return sum + t.amount; }, 0);
+      var list2 = ajuda.map(function(t){
+        return '<div class="info-line"><div><strong>'+dmyLocal(t.date)+'</strong><span>Referência '+esc(t.ym)+'</span></div><span class="tag">'+formatBRL(t.amount)+'</span></div>';
       }).join('');
-      bodyHTML = list2 || '<div class="alert">Sem lançamentos de outras origens neste filtro.</div>';
+      bodyHTML = '<div class="info-line"><div><strong>Total</strong><span>Ajuda de Custo - Brasil</span></div><span class="tag tag--accent">'+formatBRL(totalAjuda)+'</span></div>' +
+                 '<div class="drawer__section"><header class="drawer__section-head"><h4>Extrato</h4></header>' +
+                 (list2 || '<div class="alert">Sem lançamentos de Ajuda de Custo - Brasil neste filtro.</div>') +
+                 '</div>';
     }
 
     if(drawerTitle) drawerTitle.textContent = title;
@@ -719,7 +725,7 @@ var MONTHS = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'J
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
   var kpiMonthEl = document.querySelector('[data-bind="kpi-month"]');
-  var kpiOthersEl = document.querySelector('[data-bind="kpi-others"]');
+  var kpiAjudaEl = document.querySelector('[data-bind="kpi-ajuda"]');
   var plCoversEl = document.querySelector('[data-bind="pl-covers"]');
   var plBadgeEl = document.querySelector('[data-bind="pl-badge"]');
   var plExtraEl = document.querySelector('[data-bind="pl-extra"]');

@@ -1,0 +1,416 @@
+/* General styles */
+body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    color: #333;
+    background-color: #ffffff; /* Fundo branco */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+    position: relative; /* Contexto para os blobs */
+    overflow-x: hidden; /* Esconde o que vaza dos blobs horizontalmente */
+    animation: fadeIn 0.6s ease-out;
+}
+
+/* Animação de entrada da página */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Animação de saída da página */
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+}
+
+/* Classe para aplicar ao sair */
+body.page-exit {
+    animation: fadeOut 0.4s ease-in forwards;
+}
+
+/* Efeito de fundo com blobs */
+.background-effects {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+.background-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(140px);
+    opacity: 0.25;
+    animation: moveBlob 25s infinite alternate;
+}
+
+.blob-purple {
+    width: 450px;
+    height: 450px;
+    background: #8A2BE2; /* Roxo */
+    top: -10%;
+    left: -5%;
+    animation-delay: -2s;
+}
+
+.blob-blue {
+    width: 550px;
+    height: 550px;
+    background: #007BFF; /* Azul */
+    bottom: -15%;
+    right: -10%;
+    animation-delay: -8s;
+    animation-duration: 30s;
+}
+
+.blob-green {
+    width: 400px;
+    height: 400px;
+    background: #28a745; /* Verde */
+    bottom: 20%;
+    left: 25%;
+    animation-delay: -15s;
+    animation-duration: 20s;
+}
+
+@keyframes moveBlob {
+    0% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(80px, -120px) scale(1.1); }
+    66% { transform: translate(-70px, 90px) scale(0.9); }
+    100% { transform: translate(0, 0) scale(1); }
+}
+
+/* O retângulo principal que contém tudo */
+.login-page {
+    display: flex;
+    gap: 6px;
+    height: auto;
+    width: 100%;
+    max-width: 1024px; /* Largura do retângulo */
+    margin: auto;
+    border-radius: 12px;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+    overflow: hidden; /* Garante que os cantos da imagem fiquem arredondados */
+    position: relative; /* Para ficar na frente do fundo */
+    z-index: 1;
+    background-color: rgba(255, 255, 255, 0.6); /* Um branco levemente transparente para interagir com o fundo */
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: slideUp 0.7s ease-out;
+}
+
+/* Animação de deslizar para cima */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Lado da imagem (dentro do retângulo) */
+.login-image-side {
+    flex: 1 1 50%;
+    background-size: cover;
+    background-position: center; /* Centraliza a imagem, que agora tem a proporção correta */
+    background-repeat: no-repeat;
+    min-height: 540px;
+}
+
+/* Lado do formulário (dentro do retângulo) */
+.login-form-side {
+    flex: 1 1 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 48px 44px;
+    /* O fundo vem do .login-page agora */
+}
+
+.form-wrapper {
+    width: 100%;
+    max-width: 400px;
+}
+
+h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #222;
+}
+
+p {
+    font-size: 1rem;
+    color: #666;
+    margin-bottom: 40px;
+}
+
+.input-group {
+    margin-bottom: 22px;
+    position: relative;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #555;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 1rem;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    background-color: rgba(255, 255, 255, 0.8);
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.2);
+}
+
+/* Checkbox customizado */
+.keep-logged-in {
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.keep-logged-in input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    background-color: rgba(255, 255, 255, 0.8);
+    flex-shrink: 0;
+}
+
+.keep-logged-in input[type="checkbox"]:hover {
+    border-color: #007bff;
+}
+
+.keep-logged-in input[type="checkbox"]:checked {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.keep-logged-in input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.keep-logged-in label {
+    cursor: pointer;
+    user-select: none;
+    color: #555;
+    font-size: 14px;
+    font-weight: 400;
+    margin: 0;
+}
+
+button {
+    width: 100%;
+    padding: 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s ease, height 0.6s ease;
+}
+
+button:hover::before {
+    width: 300px;
+    height: 300px;
+}
+
+button:hover {
+    background-color: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 91, 179, 0.3);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+.error-message {
+    color: #d93025;
+    margin: -15px 0 15px;
+    font-size: 14px;
+}
+
+/* Design responsivo para empilhar em telas menores */
+@media (max-width: 860px) {
+    body {
+        align-items: center; /* Mantém centralizado */
+        padding: 16px;
+    }
+    .login-page {
+        gap: 0;
+        flex-direction: column;
+        max-width: 520px; /* Ajusta a largura máxima para o layout de coluna */
+        background-color: rgba(255, 255, 255, 0.85); /* Aumenta a opacidade em telas menores para legibilidade */
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    .login-image-side {
+        min-height: 280px;
+        order: 1;
+        background-position: center 38%;
+    }
+
+    .login-form-side {
+        padding: 32px 24px 36px;
+        order: 2;
+    }
+
+    h2 {
+        font-size: 1.65rem;
+        margin-bottom: 8px;
+    }
+
+    p {
+        margin-bottom: 28px;
+        font-size: 0.95rem;
+    }
+}
+
+@media (max-width: 640px) {
+    body {
+        padding: 12px;
+        align-items: center;
+    }
+
+    .background-blob {
+        filter: blur(100px);
+        opacity: 0.2;
+    }
+
+    .login-page {
+        max-width: 100%;
+        width: 100%;
+        border-radius: 20px;
+        overflow: hidden;
+        background-color: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .login-image-side {
+        order: 1;
+        min-height: 220px;
+        background-position: center 38%;
+        background-size: cover;
+    }
+
+    .login-form-side {
+        order: 2;
+        padding: 28px 20px 32px;
+    }
+
+    .form-wrapper {
+        max-width: none;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+        margin-bottom: 6px;
+    }
+
+    p {
+        font-size: 0.9rem;
+        margin-bottom: 24px;
+    }
+
+    .input-group {
+        margin-bottom: 18px;
+    }
+
+    .input-group label {
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .input-group input {
+        padding: 13px;
+        font-size: 15px;
+    }
+
+    .keep-logged-in {
+        margin-bottom: 20px;
+    }
+
+    .keep-logged-in label {
+        font-size: 13px;
+    }
+
+    button {
+        padding: 14px;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .error-message {
+        font-size: 13px;
+        margin: -12px 0 16px;
+    }
+}
