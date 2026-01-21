@@ -2,7 +2,7 @@
 // app/config.php
 return [
   'APP_NAME'        => 'RECEBIMENTOS JULIANO',
-  'CSV_JULIANO'     => 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSESqMGBflGDma7L2YWefu820XuG8x3LvPv6kXno7eD9Ox7JhTZ0SAQceupm1z1itQBNSjwqvF1ZmHF/pub?gid=0&single=true&output=csv',
+  'CSV_JULIANO'     => 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUd_2Ytco1v6SbiUy8X4qcVKKqomoIZQprtTYpqWd_oWA7BI851CLOpGnmtHwXSufF0u_38t2mz5hZ/pub?gid=0&single=true&output=csv',
   'CACHE_FILE'      => __DIR__ . '/../cache/data.json',
 
   'PRO_LABORE_TARGET' => 24000,
